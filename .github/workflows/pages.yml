@@ -27,6 +27,14 @@ jobs:
           node-version: 22
       - name: Testes antes de publicar
         run: npm test
+      - name: Carimbar a versão nos arquivos (evita cache antigo no celular)
+        run: |
+          V="${GITHUB_SHA::8}"
+          echo "$V" > app/version.txt
+          # todo import relativo e os arquivos do index.html ganham ?v=<versão>
+          find app -name '*.js' -print0 | xargs -0 sed -i -E "s#(from '\.{1,2}/[^']+\.js)'#\1?v=$V'#g"
+          sed -i -E "s#(js/main\.js|css/app\.css)\"#\1?v=$V\"#g" app/index.html
+          grep -c "?v=$V" app/index.html app/js/main.js
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

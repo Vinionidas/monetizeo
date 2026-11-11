@@ -350,3 +350,29 @@ boot()
   .catch((error) => {
     root.innerHTML = `<main class="welcome"><section class="card"><h1>Não foi possível abrir</h1><p class="muted">${esc(error.message)}</p><button class="btn primary" onclick="location.reload()">Tentar de novo</button></section></main>`;
   });
+
+// ------------------------------------------------------------ atualização
+// No site publicado, cada arquivo é carregado com "?v=<versão>". Quando o app
+// volta para a frente (ou a cada alguns minutos), confere se saiu versão nova
+// e recarrega sozinho — sem isso o celular ficava preso na versão antiga.
+const loadedVersion = new URL(import.meta.url).searchParams.get('v');
+
+async function checkForUpdate() {
+  if (!loadedVersion || document.hidden) return;
+  try {
+    const response = await fetch(`version.txt?t=${Date.now()}`, { cache: 'no-store' });
+    if (!response.ok) return;
+    const latest = (await response.text()).trim();
+    if (!latest || latest === loadedVersion) return;
+    // Não interrompe um formulário aberto nem entra em laço se o cache insistir.
+    if (document.querySelector('dialog[open]') || sessionStorage.getItem('monetizeo:reloaded') === latest) return;
+    sessionStorage.setItem('monetizeo:reloaded', latest);
+    location.reload();
+  } catch {
+    // sem internet: tenta de novo depois
+  }
+}
+
+document.addEventListener('visibilitychange', checkForUpdate);
+window.addEventListener('focus', checkForUpdate);
+setInterval(checkForUpdate, 5 * 60 * 1000);

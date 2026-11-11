@@ -4,7 +4,7 @@
 import { isLegacy } from './migrate.js';
 import {
   ACCOUNT_TYPES, GROUPS, debtBalance, goalSaved, installmentStatus, isCard, isMoneyAccount,
-  monthItems, usageCount,
+  loanStatus, monthItems, usageCount,
 } from './model.js';
 import { decodeOfx, parseOfx, splitNewOfx } from './ofx.js';
 import { getState, replaceAll, undo, update } from './store.js';
@@ -59,6 +59,8 @@ function movementFields(state, values) {
     { name: 'accountId', label: 'Conta ou cartão', type: 'select', options: accountOptions(state, values.accountId) },
     { name: 'personId', label: 'Quem', type: 'select', options: personOptions(state) },
     { name: 'scope', label: 'Essa despesa é', type: 'segmented', options: SCOPE_OPTIONS, showIf: (v) => v.type === 'expense', hint: 'Contas da casa entram na divisão entre vocês.' },
+    { name: 'isLoan', label: 'Emprestei para alguém e vou receber de volta', type: 'checkbox', showIf: (v) => v.type === 'expense', hint: 'Não conta como gasto: fica em "A receber" até devolverem.' },
+    { name: 'loanTo', label: 'Quem vai devolver', placeholder: 'Nome', showIf: (v) => v.type === 'expense' && v.isLoan },
     { name: 'paid', label: 'Já foi pago / recebido', type: 'checkbox', showIf: (v) => !(v.type === 'expense' && isCardAccount(v)) },
   ];
 }
@@ -67,6 +69,8 @@ function movementValues(source) {
   return {
     ...source,
     personId: source.personId || '',
+    isLoan: !!source.loan,
+    loanTo: source.loan?.to || '',
     expenseCategory: source.type === 'expense' ? source.categoryId : undefined,
     incomeCategory: source.type === 'income' ? source.categoryId : undefined,
   };
@@ -83,6 +87,7 @@ function readMovement(values) {
     personId: values.personId || null,
     scope: values.type === 'expense' ? values.scope : 'personal',
     paid: !!values.paid,
+    loan: values.type === 'expense' && values.isLoan ? { to: values.loanTo || 'Alguém' } : null,
   };
 }
 
@@ -104,6 +109,7 @@ export function openEntryForm(ctx, entry = null, preset = {}) {
     values,
     submitLabel: entry ? 'Salvar' : 'Adicionar',
     onSubmit(v) {
+      if (v.type === 'expense' && v.isLoan && !v.loanTo) return 'Informe quem vai devolver o dinheiro.';
       const data = readMovement(v);
       update((s) => {
         if (entry) Object.assign(s.entries.find((e) => e.id === entry.id), data);
@@ -115,7 +121,11 @@ export function openEntryForm(ctx, entry = null, preset = {}) {
       label: 'Apagar', danger: true,
       run(close) {
         close();
-        update((s) => { s.entries = s.entries.filter((e) => e.id !== entry.id); });
+        update((s) => {
+          s.entries = s.entries.filter((e) => e.id !== entry.id);
+          // Devoluções de um empréstimo apagado viram receitas comuns.
+          for (const e of s.entries) if (e.source?.kind === 'loan' && e.source.id === entry.id) delete e.source;
+        });
         toast(entry.source ? 'Lançamento apagado. A previsão do mês voltou.' : 'Lançamento apagado.', undoAction);
       },
     }] : [],
@@ -204,13 +214,43 @@ export function openItem(ctx, item) {
   });
 }
 
+// -------------------------------------------------------------- a receber
+
+/** Registra que alguém devolveu (tudo ou parte de) um empréstimo. */
+export function receiveLoan(ctx, entry) {
+  const state = getState();
+  const { outstanding } = loanStatus(state, entry);
+  openForm({
+    title: `Recebi de ${entry.loan.to}`,
+    eyebrow: `${entry.description} · faltam ${money(outstanding)}`,
+    fields: [
+      { name: 'amount', label: 'Valor devolvido', type: 'money', required: true },
+      { name: 'date', label: 'Data', type: 'date', required: true },
+      { name: 'accountId', label: 'Entrou em', type: 'select', required: true, options: accountOptions(state, null, isMoneyAccount) },
+    ],
+    values: { amount: outstanding, date: ctx.today, accountId: defaultMoneyAccount(state, entry.accountId) },
+    submitLabel: 'Registrar',
+    onSubmit(v) {
+      if (v.amount > outstanding + 0.004) return `O valor passa do que falta receber (${money(outstanding)}).`;
+      update((s) => {
+        s.entries.push({
+          id: uid(), date: v.date, description: `Devolução — ${entry.loan.to}`, amount: v.amount, type: 'income',
+          categoryId: ensureCategory(s, 'Outras receitas', { kind: 'income', group: null }), accountId: v.accountId,
+          personId: entry.personId ?? null, scope: 'personal', paid: true, source: { kind: 'loan', id: entry.id },
+        });
+      });
+      toast('Devolução registrada.', undoAction);
+    },
+  });
+}
+
 // ------------------------------------------------------------- recorrentes
 
 export function openRecurringForm(ctx, recurring = null) {
   const state = getState();
   const base = recurring || { type: 'expense', description: '', amount: null, day: 5, categoryId: null, accountId: defaultMoneyAccount(state), personId: ctx.me, scope: 'house', start: null, end: null };
   const values = { ...movementValues(base), applyFrom: 'always', from: ctx.ym };
-  const fields = movementFields(state, values).filter((f) => f.name !== 'date' && f.name !== 'paid');
+  const fields = movementFields(state, values).filter((f) => !['date', 'paid', 'isLoan', 'loanTo'].includes(f.name));
   fields.find((f) => f.name === 'amount').required = false;
   fields.find((f) => f.name === 'amount').hint = 'Deixe vazio se o valor muda todo mês.';
   fields.splice(3, 0, { name: 'day', label: 'Dia do mês', type: 'number', min: 1, max: 31, required: true });

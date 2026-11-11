@@ -1,10 +1,13 @@
 // Visão geral: quanto sobra no mês, o que vence, a divisão da casa, cartões,
 // orçamento e os próximos meses.
 
-import { openItem, payItem } from '../actions.js';
-import { cardInvoice, expensesByCategory, houseSplit, isCard, isOverdue, leftover, monthItems, projection } from '../model.js';
+import { openItem, payItem, receiveLoan } from '../actions.js';
+import { cardInvoice, dailyAllowance, expensesByCategory, houseSplit, isCard, isOverdue, leftover, monthItems, openLoans, projection, splitShares } from '../model.js';
 import { bar } from '../ui.js';
-import { byId, esc, fmtDay, fmtMonth, fmtMonthShort, money, percent, sum } from '../util.js';
+import { byId, esc, fmtDate, fmtDay, fmtMonth, fmtMonthShort, money, percent, sum } from '../util.js';
+
+// Dia de vencimento escolhido em "Contas a pagar" ('' = todas).
+let dueFilter = '';
 import { bigMoney, empty, findItem, itemRow, lookups, personDot, sectionHead } from './shared.js';
 
 function hero(ctx, items) {
@@ -23,11 +26,15 @@ function hero(ctx, items) {
       <button type="button" data-action="view" data-person="" class="${person ? '' : 'on'}">Casal</button>
       ${state.people.map((p) => `<button type="button" data-action="view" data-person="${esc(p.id)}" class="${person?.id === p.id ? 'on' : ''}">${esc(p.name)}</button>`).join('')}
     </div>` : '';
+  const daily = dailyAllowance(lo.left, ctx.today, ctx.ym);
+  const dailyLine = daily
+    ? `<p class="daily">Dá para gastar até <strong>${esc(money(daily.perDay))} por dia</strong> ${daily.days === 1 ? 'hoje, último dia do mês' : `nos ${daily.days} dias que faltam`}, sem mexer no que já está reservado para as contas.</p>`
+    : '';
   const legend = (cls, label, value, share) => `<div class="legend-item"><span><i class="swatch ${cls}"></i>${esc(label)}</span><strong>${esc(money(value))}</strong><small>${share}</small></div>`;
   return `
     <section class="card hero">
       <header class="card-head"><h2>${person ? `Sobra de ${esc(person.name)}` : 'Sobra prevista do mês'}</h2>${toggle}</header>
-      <div class="hero-figure">${bigMoney(lo.left, lo.left < 0 ? 'neg' : '')}<p class="${lo.left < 0 ? 'neg' : 'muted'}">${esc(note)}</p></div>
+      <div class="hero-figure">${bigMoney(lo.left, lo.left < 0 ? 'neg' : '')}<p class="${lo.left < 0 ? 'neg' : 'muted'}">${esc(note)}</p>${dailyLine}</div>
       <div class="stack" role="img" aria-label="Divisão da renda entre contas da casa, gastos pessoais e sobra">
         ${seg(lo.house, 'house')}${seg(lo.personal, 'personal')}${seg(Math.max(0, lo.left), 'left')}
       </div>
@@ -46,13 +53,24 @@ function pending(ctx, items, look) {
   const total = sum(open, (i) => i.amount);
   const aside = open.length ? `<span class="muted">${open.length} em aberto · ${esc(money(total))}</span>` : '';
   const alert = overdue.length ? `<p class="notice neg">${overdue.length === 1 ? '1 conta atrasada' : `${overdue.length} contas atrasadas`}, somando ${esc(money(sum(overdue, (i) => i.amount)))}.</p>` : '';
-  const list = open.slice(0, 6).map((i) => itemRow(ctx, i, look, { showDate: true })).join('');
+  const dates = [...new Set(open.map((i) => i.date))];
+  if (!dates.includes(dueFilter)) dueFilter = '';
+  const shown = dueFilter ? open.filter((i) => i.date === dueFilter) : open.slice(0, 6);
+  const chip = (value, top, bottom, late) => `<button type="button" class="chip${dueFilter === value ? ' on' : ''}${late ? ' late' : ''}" data-action="due" data-date="${value}"><strong>${esc(top)}</strong><small>${esc(bottom)}</small></button>`;
+  const chips = dates.length > 1
+    ? `<div class="chips" role="group" aria-label="Filtrar por dia de vencimento">${chip('', 'Todas', `${open.length} contas`, false)}${dates.map((d) => {
+      const ofDay = open.filter((i) => i.date === d);
+      return chip(d, fmtDay(d), money(sum(ofDay, (i) => i.amount)), d < ctx.today);
+    }).join('')}</div>`
+    : '';
+  const list = shown.map((i) => itemRow(ctx, i, look, { showDate: !dueFilter })).join('');
   return `
     <section class="card">
       ${sectionHead('Contas a pagar', aside)}
       ${alert}
+      ${chips}
       ${open.length ? `<ul class="rows">${list}</ul>` : empty('Tudo pago', 'Nenhuma conta em aberto neste mês.')}
-      ${open.length > 6 ? `<a class="more-link" href="#/lancamentos">Ver as ${open.length} contas</a>` : ''}
+      ${!dueFilter && open.length > 6 ? `<a class="more-link" href="#/lancamentos">Ver as ${open.length} contas</a>` : ''}
     </section>`;
 }
 
@@ -78,6 +96,29 @@ function house(ctx, items) {
       <div class="split">${rows}</div>
       ${transfers}
       <a class="more-link" href="#/casa">Ver contas da casa</a>
+    </section>`;
+}
+
+function receivables(ctx) {
+  const loans = openLoans(ctx.state);
+  if (!loans.length) return '';
+  const total = sum(loans, (l) => l.outstanding);
+  const rows = loans.map(({ entry, returned, outstanding }) => `
+    <li class="row">
+      <span class="row-body static">
+        <span class="row-main">
+          <span class="row-title">${esc(entry.loan.to)}</span>
+          <span class="row-sub">${esc(entry.description)} · ${esc(fmtDate(entry.date))}${returned > 0 ? ` · já devolveu ${esc(money(returned))}` : ''}</span>
+        </span>
+        <span class="row-side"><strong class="pos">${esc(money(outstanding))}</strong></span>
+      </span>
+      <button type="button" class="btn small" data-action="receive" data-id="${esc(entry.id)}">Recebi</button>
+    </li>`).join('');
+  return `
+    <section class="card">
+      ${sectionHead('A receber de outras pessoas', `<strong class="pos">${esc(money(total))}</strong>`)}
+      <p class="muted">Dinheiro que vocês emprestaram. Não conta como gasto nem entra na sobra até voltar.</p>
+      <ul class="rows">${rows}</ul>
     </section>`;
 }
 
@@ -139,11 +180,13 @@ function forecast(ctx) {
 export function render(ctx) {
   const items = monthItems(ctx.state, ctx.ym);
   const look = lookups(ctx.state);
+  look.shares = ctx.state.people.length > 1 ? splitShares(ctx.state, items) : null;
   return `
     ${hero(ctx, items)}
     <div class="grid">
       ${pending(ctx, items, look)}
       ${house(ctx, items)}
+      ${receivables(ctx)}
       ${cards(ctx)}
       ${budget(ctx, items)}
       ${forecast(ctx)}
@@ -154,4 +197,6 @@ export const actions = {
   pay: (ctx, el) => { const item = findItem(ctx.state, el); if (item) payItem(ctx, item); },
   item: (ctx, el) => { const item = findItem(ctx.state, el); if (item) openItem(ctx, item); },
   view: (ctx, el) => ctx.setViewPerson(el.dataset.person || null),
+  due: (ctx, el) => { dueFilter = el.dataset.date; ctx.rerender(); },
+  receive: (ctx, el) => { const entry = ctx.state.entries.find((e) => e.id === el.dataset.id); if (entry) receiveLoan(ctx, entry); },
 };

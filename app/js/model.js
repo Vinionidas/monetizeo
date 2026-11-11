@@ -5,7 +5,7 @@
 // dívida, valor guardado em meta e saldo de conta são sempre calculados a
 // partir dos lançamentos. Apagar ou corrigir um lançamento conserta todo o resto.
 
-import { addMonths, byId, dateIn, dayOf, monthDiff, round2, sum, ymOf } from './util.js';
+import { addMonths, byId, dateIn, dayOf, daysInMonth, monthDiff, round2, sum, ymOf } from './util.js';
 
 export const SCHEMA = 1;
 
@@ -47,6 +47,12 @@ export function normalize(state) {
   out.split = { ...base.split, ...(state.split || {}) };
   return out;
 }
+
+/**
+ * Empréstimo a alguém e a devolução dele são dinheiro que sai e volta: mexem no
+ * saldo da conta, mas não são gasto nem renda, então ficam fora das somas do mês.
+ */
+export const isTransfer = (entry) => !!entry.loan || entry.source?.kind === 'loan';
 
 export const isMoneyAccount = (account) => !!account && (account.type === 'bank' || account.type === 'cash');
 export const isCard = (account) => !!account && account.type === 'card';
@@ -171,7 +177,7 @@ export function monthItems(state, ym) {
     if (e.source?.kind === 'recurring') linked.add(`r:${e.source.id}:${e.source.period}`);
     if (e.source?.kind === 'installment') linked.add(`i:${e.source.id}:${e.source.index}`);
     if (effectiveMonth(state, e, lookups) === ym) {
-      items.push(withCard({ ...e, key: `e:${e.id}`, kind: 'entry', projected: false, paid: !!e.paid }));
+      items.push(withCard({ ...e, key: `e:${e.id}`, kind: 'entry', projected: false, paid: !!e.paid, transfer: isTransfer(e) }));
     }
   }
 
@@ -205,7 +211,8 @@ export function isOverdue(item, todayDate) {
   return !item.paid && !item.onCard && item.type === 'expense' && item.date < todayDate;
 }
 
-export function summarize(items) {
+export function summarize(all) {
+  const items = all.filter((i) => !i.transfer);
   const income = sum(items.filter((i) => i.type === 'income'), (i) => i.amount);
   const expenses = items.filter((i) => i.type === 'expense');
   const expense = sum(expenses, (i) => i.amount);
@@ -216,7 +223,7 @@ export function summarize(items) {
 export function expensesByCategory(state, items) {
   const totals = new Map();
   for (const item of items) {
-    if (item.type !== 'expense') continue;
+    if (item.type !== 'expense' || item.transfer) continue;
     totals.set(item.categoryId, round2((totals.get(item.categoryId) || 0) + item.amount));
   }
   const categories = byId(state.categories);
@@ -241,7 +248,7 @@ export function splitShares(state, items) {
   if (state.split.mode === 'income') {
     const incomes = {};
     for (const item of items) {
-      if (item.type === 'income' && item.personId) incomes[item.personId] = (incomes[item.personId] || 0) + item.amount;
+      if (item.type === 'income' && item.personId && !item.transfer) incomes[item.personId] = (incomes[item.personId] || 0) + item.amount;
     }
     return fromWeights(incomes);
   }
@@ -254,7 +261,7 @@ export function splitShares(state, items) {
  * em aberto não gera dívida entre o casal.
  */
 export function houseSplit(state, ym, items = monthItems(state, ym)) {
-  const bills = items.filter((i) => i.scope === 'house' && i.type === 'expense');
+  const bills = items.filter((i) => i.scope === 'house' && i.type === 'expense' && !i.transfer);
   const total = sum(bills, (i) => i.amount);
   const shares = splitShares(state, items);
   const paidBills = bills.filter((i) => i.paid && i.personId);
@@ -289,7 +296,8 @@ export function houseSplit(state, ym, items = monthItems(state, ym)) {
 }
 
 /** Resumo do mês do ponto de vista de uma pessoa (ou do casal, com personId null). */
-export function leftover(state, ym, personId = null, items = monthItems(state, ym)) {
+export function leftover(state, ym, personId = null, allItems = monthItems(state, ym)) {
+  const items = allItems.filter((i) => !i.transfer);
   const house = houseSplit(state, ym, items);
   const expenses = items.filter((i) => i.type === 'expense');
   const personalItems = expenses.filter((i) => i.scope !== 'house');
@@ -305,6 +313,33 @@ export function leftover(state, ym, personId = null, items = monthItems(state, y
   const personal = mine(personalItems);
   const houseShare = round2(house.total * share);
   return { income, house: houseShare, personal, left: round2(income - houseShare - personal) };
+}
+
+// ------------------------------------------------------------ a receber
+
+/** Quanto de um empréstimo já voltou e quanto falta. */
+export function loanStatus(state, entry) {
+  const returned = sum(state.entries.filter((e) => e.source?.kind === 'loan' && e.source.id === entry.id), (e) => e.amount);
+  return { returned, outstanding: Math.max(0, round2(entry.amount - returned)) };
+}
+
+/** Empréstimos ainda não devolvidos por inteiro, do mais antigo para o mais novo. */
+export function openLoans(state) {
+  return state.entries
+    .filter((e) => e.loan)
+    .map((entry) => ({ entry, ...loanStatus(state, entry) }))
+    .filter((loan) => loan.outstanding > 0)
+    .sort((a, b) => a.entry.date.localeCompare(b.entry.date));
+}
+
+/**
+ * Quanto dá para gastar por dia até o fim do mês sem estourar a sobra.
+ * A sobra já desconta todas as contas previstas, então isto é dinheiro livre.
+ */
+export function dailyAllowance(left, todayDate, ym) {
+  if (ymOf(todayDate) !== ym || !(left > 0)) return null;
+  const days = daysInMonth(ym) - dayOf(todayDate) + 1;
+  return { days, perDay: round2(left / days) };
 }
 
 // ---------------------------------------------------------------- cartões

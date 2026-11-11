@@ -43,7 +43,12 @@ export function itemRow(ctx, item, look, { showDate = false } = {}) {
     item.kind === 'recurring' ? '<span class="tag">recorrente</span>' : '',
     item.kind === 'installment' || item.source?.kind === 'installment' ? '<span class="tag">parcela</span>' : '',
     item.scope === 'house' && item.type === 'expense' ? '<span class="tag house">casa</span>' : '',
+    item.loan ? '<span class="tag">emprestado</span>' : '',
+    item.source?.kind === 'loan' ? '<span class="tag">devolução</span>' : '',
   ].join('');
+  // Em conta da casa, mostra quanto cabe a quem está usando este aparelho.
+  const myShare = look.shares && ctx.me && item.scope === 'house' && item.type === 'expense' && !item.transfer && !item.variable
+    ? ` · sua parte ${money(item.amount * (look.shares[ctx.me] || 0))}` : '';
   const check = item.paid
     ? `<span class="check done" title="${item.type === 'income' ? 'Recebido' : 'Pago'}">${icon('check', 14)}</span>`
     : item.onCard
@@ -56,7 +61,7 @@ export function itemRow(ctx, item, look, { showDate = false } = {}) {
       <button type="button" class="row-body" data-action="item" data-key="${esc(item.key)}" data-month="${esc(ctx.ym)}">
         <span class="row-main">
           <span class="row-title">${esc(item.description)}${tags}</span>
-          <span class="row-sub">${personDot(person)}${esc(person ? person.name : 'Casal')} · ${esc(category)}${account ? ` · ${esc(account)}` : ''}</span>
+          <span class="row-sub">${personDot(person)}${esc(person ? person.name : 'Casal')} · ${esc(category)}${account ? ` · ${esc(account)}` : ''}${esc(myShare)}</span>
         </span>
         <span class="row-side">
           <strong class="${item.type === 'income' ? 'pos' : ''}">${amount}</strong>

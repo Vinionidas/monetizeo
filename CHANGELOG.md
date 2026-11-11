@@ -2,6 +2,15 @@
 
 Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/).
 
+## [0.4.0] - 2026-11-11
+
+### Adicionado
+- A receber de outras pessoas: marque uma despesa como empréstimo e ela sai dos gastos e da sobra
+  até ser devolvida; devoluções parciais ou totais são registradas pela visão geral.
+- "Dá para gastar até R$ X por dia": a sobra do mês dividida pelos dias que faltam.
+- Contas a pagar com filtro por dia de vencimento, destacando os dias já atrasados.
+- Nas contas da casa, cada linha mostra "sua parte" para quem está usando o aparelho.
+
 ## [0.3.0] - 2026-11-11
 
 ### Adicionado

@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { isLegacy, migrateLegacy } from '../app/js/migrate.js';
 import {
-  accountBalance, cardCommitted, cardInvoice, debtBalance, emptyState, goalPlan, houseSplit, installmentStatus,
-  invoiceMonthFor, isOverdue, leftover, monthItems, projection, recurringConfig, summarize,
+  accountBalance, cardCommitted, cardInvoice, dailyAllowance, debtBalance, emptyState, goalPlan, houseSplit, installmentStatus,
+  invoiceMonthFor, isOverdue, leftover, loanStatus, monthItems, openLoans, projection, recurringConfig, summarize,
 } from '../app/js/model.js';
 import { decodeOfx, parseOfx, splitNewOfx } from '../app/js/ofx.js';
 import { addMonths, dateIn, monthDiff, parseMoney, today } from '../app/js/util.js';
@@ -263,4 +263,31 @@ test('migração do formato antigo: cadastros por id, vínculos e parcelas pagas
   assert.equal(s.installments[0].paidBefore, 2);
   assert.equal(installmentStatus(s, s.installments[0]).paidCount, 3);
   assert.equal(debtBalance(s, s.debts[0]), 320.5);
+});
+
+test('empréstimo a receber fica fora dos gastos e da sobra até voltar', () => {
+  const s = fixture();
+  s.entries.push({ id: 'l1', date: '2026-03-08', description: 'Emprestado', amount: 300, type: 'expense', categoryId: 'lazer', accountId: 'banco', personId: 'ana', scope: 'personal', paid: true, loan: { to: 'Caio' } });
+  const before = leftover(fixture(), '2026-03');
+  assert.deepEqual(leftover(s, '2026-03'), before); // não mexe na sobra
+  assert.equal(summarize(monthItems(s, '2026-03')).expense, 1550);
+  assert.equal(accountBalance(s, s.accounts[0]), -200); // mas o dinheiro saiu da conta
+  assert.deepEqual(openLoans(s).map((l) => [l.entry.loan.to, l.outstanding]), [['Caio', 300]]);
+
+  // devolução parcial: entra na conta, não vira renda, e o saldo a receber cai
+  s.entries.push({ id: 'r1', date: '2026-03-20', description: 'Devolução', amount: 100, type: 'income', categoryId: 'renda', accountId: 'banco', personId: 'ana', paid: true, source: { kind: 'loan', id: 'l1' } });
+  assert.equal(summarize(monthItems(s, '2026-03')).income, 8000);
+  assert.equal(loanStatus(s, s.entries[0]).outstanding, 200);
+  assert.equal(accountBalance(s, s.accounts[0]), -100);
+
+  // devolvido por inteiro some da lista
+  s.entries.push({ id: 'r2', date: '2026-04-02', description: 'Devolução', amount: 200, type: 'income', accountId: 'banco', paid: true, source: { kind: 'loan', id: 'l1' } });
+  assert.deepEqual(openLoans(s), []);
+});
+
+test('gasto por dia: divide a sobra pelos dias que faltam, só no mês atual', () => {
+  assert.deepEqual(dailyAllowance(600, '2026-11-11', '2026-11'), { days: 20, perDay: 30 });
+  assert.deepEqual(dailyAllowance(90, '2026-11-30', '2026-11'), { days: 1, perDay: 90 });
+  assert.equal(dailyAllowance(600, '2026-11-11', '2026-12'), null); // outro mês
+  assert.equal(dailyAllowance(-50, '2026-11-11', '2026-11'), null); // sem sobra
 });

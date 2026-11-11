@@ -1,7 +1,7 @@
 // Casa: as contas compartilhadas do mês, quanto cabe a cada um e o acerto entre o casal.
 
 import { openItem, openSplitForm, payItem, removeSettlement, settle } from '../actions.js';
-import { houseSplit, monthItems } from '../model.js';
+import { houseSplit, monthItems, splitShares } from '../model.js';
 import { byId, esc, fmtDate, money, percent, sum } from '../util.js';
 import { bigMoney, empty, findItem, itemRow, lookups, personDot, sectionHead } from './shared.js';
 
@@ -13,6 +13,7 @@ export function render(ctx) {
   const split = houseSplit(state, ctx.ym, items);
   const people = byId(state.people);
   const look = lookups(state);
+  look.shares = state.people.length > 1 ? splitShares(state, items) : null;
   const open = sum(split.bills.filter((b) => !b.paid), (b) => b.amount);
 
   const persons = split.people.map((p) => `

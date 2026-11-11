@@ -293,6 +293,17 @@ button.check:hover { border-color: var(--accent); background: var(--accent-soft)
 .stats div { display: grid; gap: 2px; padding: 11px 12px; border: 1px solid var(--line); border-radius: var(--radius-sm); }
 .stats small { color: var(--muted); font-size: .78rem; }
 
+/* ----------------------------------------- vencimentos por dia e por-dia */
+.daily { margin-top: 6px; padding: 9px 12px; border-radius: var(--radius-sm); background: var(--accent-soft); color: var(--text); font-size: .92rem; }
+.daily strong { color: var(--accent-strong); }
+.chips { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; scrollbar-width: thin; }
+.chip { flex: none; display: grid; gap: 1px; justify-items: start; padding: 7px 11px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface); }
+.chip strong { font-size: .86rem; }
+.chip small { font-size: .74rem; color: var(--muted); }
+.chip:hover { border-color: var(--line-strong); }
+.chip.late strong { color: var(--neg); }
+.chip.on { border-color: var(--accent); background: var(--accent-soft); }
+
 /* --------------------------------------------------------------- botões */
 
 .btn {

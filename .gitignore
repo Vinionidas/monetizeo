@@ -1,0 +1,16 @@
+# Dados financeiros pessoais: nunca entram no repositório.
+data/
+*.ofx
+*.xlsx
+*.xls
+monetizeo-backup-*.json
+casa-em-ordem-*.json
+
+# Ambiente local
+.env
+node_modules/
+__pycache__/
+*.pyc
+
+# Configuração local de ferramentas
+.mcp.json

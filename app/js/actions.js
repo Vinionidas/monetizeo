@@ -1,0 +1,779 @@
+// Tudo o que altera dados passa por aqui: cada função abre o formulário certo,
+// valida e grava pelo store. As telas só chamam estas funções.
+
+import { isLegacy } from './migrate.js';
+import {
+  ACCOUNT_TYPES, GROUPS, debtBalance, goalSaved, installmentStatus, isCard, isMoneyAccount,
+  monthItems, usageCount,
+} from './model.js';
+import { decodeOfx, parseOfx, splitNewOfx } from './ofx.js';
+import { getState, replaceAll, undo, update } from './store.js';
+import { confirmDialog, openDialog, openForm, toast } from './ui.js';
+import { addMonths, byId, esc, fmtDate, fmtMonth, money, norm, round2, today, uid, ymOf } from './util.js';
+
+const undoAction = { label: 'Desfazer', run: () => undo() };
+
+// ------------------------------------------------------------------ opções
+
+const active = (list, keepId) => list.filter((x) => !x.archived || x.id === keepId);
+
+function personOptions(state, jointLabel = 'Casal') {
+  return [{ value: '', label: jointLabel }, ...state.people.map((p) => ({ value: p.id, label: p.name }))];
+}
+function accountOptions(state, keepId, filter = () => true) {
+  return active(state.accounts, keepId).filter(filter).map((a) => ({ value: a.id, label: a.name }));
+}
+function categoryOptions(state, kind, keepId) {
+  return active(state.categories, keepId).filter((c) => c.kind === kind).map((c) => ({ value: c.id, label: c.name }));
+}
+const TYPE_OPTIONS = [{ value: 'expense', label: 'Despesa' }, { value: 'income', label: 'Receita' }];
+const SCOPE_OPTIONS = [{ value: 'house', label: 'Da casa' }, { value: 'personal', label: 'Pessoal' }];
+
+function defaultMoneyAccount(state, preferredId) {
+  const accounts = byId(state.accounts);
+  if (isMoneyAccount(accounts.get(preferredId))) return preferredId;
+  return state.accounts.find((a) => a.type === 'bank' && !a.archived)?.id || state.accounts.find((a) => isMoneyAccount(a) && !a.archived)?.id || '';
+}
+
+function ensureCategory(state, name, props) {
+  let category = state.categories.find((c) => norm(c.name) === norm(name));
+  if (!category) {
+    category = { id: uid(), name, kind: 'expense', group: 'need', budget: 0, estimate: 0, archived: false, ...props };
+    state.categories.push(category);
+  }
+  return category.id;
+}
+
+// ------------------------------------------------------------- lançamentos
+
+/** Campos comuns a lançamento, recorrente e revisão de extrato. */
+function movementFields(state, values) {
+  const isCardAccount = (v) => isCard(state.accounts.find((a) => a.id === v.accountId));
+  return [
+    { name: 'type', label: 'Tipo', type: 'segmented', options: TYPE_OPTIONS },
+    { name: 'description', label: 'Descrição', required: true, full: true, placeholder: 'Ex.: mercado' },
+    { name: 'amount', label: 'Valor', type: 'money', required: true },
+    { name: 'date', label: 'Data', type: 'date', required: true },
+    { name: 'expenseCategory', label: 'Categoria', type: 'select', options: categoryOptions(state, 'expense', values.categoryId), showIf: (v) => v.type === 'expense' },
+    { name: 'incomeCategory', label: 'Categoria', type: 'select', options: categoryOptions(state, 'income', values.categoryId), showIf: (v) => v.type === 'income' },
+    { name: 'accountId', label: 'Conta ou cartão', type: 'select', options: accountOptions(state, values.accountId) },
+    { name: 'personId', label: 'Quem', type: 'select', options: personOptions(state) },
+    { name: 'scope', label: 'Essa despesa é', type: 'segmented', options: SCOPE_OPTIONS, showIf: (v) => v.type === 'expense', hint: 'Contas da casa entram na divisão entre vocês.' },
+    { name: 'paid', label: 'Já foi pago / recebido', type: 'checkbox', showIf: (v) => !(v.type === 'expense' && isCardAccount(v)) },
+  ];
+}
+
+function movementValues(source) {
+  return {
+    ...source,
+    personId: source.personId || '',
+    expenseCategory: source.type === 'expense' ? source.categoryId : undefined,
+    incomeCategory: source.type === 'income' ? source.categoryId : undefined,
+  };
+}
+
+function readMovement(values) {
+  return {
+    type: values.type,
+    description: values.description,
+    amount: values.amount,
+    date: values.date,
+    categoryId: values.type === 'income' ? values.incomeCategory : values.expenseCategory,
+    accountId: values.accountId,
+    personId: values.personId || null,
+    scope: values.type === 'expense' ? values.scope : 'personal',
+    paid: !!values.paid,
+  };
+}
+
+export function openEntryForm(ctx, entry = null, preset = {}) {
+  const state = getState();
+  const base = entry || {
+    type: 'expense', description: '', amount: null, date: ctx.ym === ctx.currentYm ? ctx.today : `${ctx.ym}-01`,
+    categoryId: null, accountId: defaultMoneyAccount(state), personId: ctx.me, scope: 'personal', paid: true, ...preset,
+  };
+  const values = movementValues(base);
+  const hasCategory = (kind) => state.categories.some((c) => c.kind === kind && !c.archived);
+  if (!hasCategory('expense') || !hasCategory('income') || !state.accounts.length) {
+    toast('Cadastre ao menos uma conta e categorias de receita e despesa em Ajustes.');
+    return;
+  }
+  openForm({
+    title: entry ? 'Editar lançamento' : 'Novo lançamento',
+    fields: movementFields(state, values),
+    values,
+    submitLabel: entry ? 'Salvar' : 'Adicionar',
+    onSubmit(v) {
+      const data = readMovement(v);
+      update((s) => {
+        if (entry) Object.assign(s.entries.find((e) => e.id === entry.id), data);
+        else s.entries.push({ id: uid(), ...data, ...(base.source ? { source: base.source } : {}) });
+      });
+      toast(entry ? 'Lançamento atualizado.' : 'Lançamento adicionado.');
+    },
+    actions: entry ? [{
+      label: 'Apagar', danger: true,
+      run(close) {
+        close();
+        update((s) => { s.entries = s.entries.filter((e) => e.id !== entry.id); });
+        toast(entry.source ? 'Lançamento apagado. A previsão do mês voltou.' : 'Lançamento apagado.', undoAction);
+      },
+    }] : [],
+  });
+}
+
+/** Confirma o pagamento (ou recebimento) de um item do mês, seja previsão ou lançamento em aberto. */
+export function payItem(ctx, item) {
+  const state = getState();
+  if (item.onCard) {
+    toast('Compras no cartão são pagas junto com a fatura, na tela Cartões.');
+    return;
+  }
+  const verb = item.type === 'income' ? 'recebimento' : 'pagamento';
+  openForm({
+    title: `Confirmar ${verb}`,
+    eyebrow: item.description,
+    fields: [
+      { name: 'amount', label: item.type === 'income' ? 'Valor recebido' : 'Valor pago', type: 'money', required: true, hint: 'Inclua juros ou desconto, se houver.' },
+      { name: 'date', label: `Data do ${verb}`, type: 'date', required: true },
+      { name: 'accountId', label: item.type === 'income' ? 'Entrou em' : 'Saiu de', type: 'select', required: true, options: accountOptions(state, null, isMoneyAccount) },
+    ],
+    values: { amount: item.amount || null, date: ctx.today, accountId: defaultMoneyAccount(state, item.accountId) },
+    submitLabel: 'Confirmar',
+    onSubmit(v) {
+      update((s) => {
+        if (item.kind === 'entry') {
+          Object.assign(s.entries.find((e) => e.id === item.id), { amount: v.amount, date: v.date, accountId: v.accountId, paid: true });
+        } else {
+          s.entries.push({
+            id: uid(), date: v.date, description: item.kind === 'installment' ? item.description : item.description,
+            amount: v.amount, type: item.type, categoryId: item.categoryId, accountId: v.accountId,
+            personId: item.personId, scope: item.scope, paid: true,
+            source: item.kind === 'recurring' ? { kind: 'recurring', id: item.refId, period: item.period } : { kind: 'installment', id: item.refId, index: item.index },
+          });
+        }
+      });
+      toast(item.type === 'income' ? 'Recebimento registrado.' : 'Pagamento registrado.', undoAction);
+    },
+  });
+}
+
+/** Clique num item do mês: lançamento abre edição; previsão abre as opções da ocorrência. */
+export function openItem(ctx, item) {
+  const state = getState();
+  if (item.kind === 'entry') return openEntryForm(ctx, state.entries.find((e) => e.id === item.id));
+  const isRecurring = item.kind === 'recurring';
+  const source = isRecurring ? { kind: 'recurring', id: item.refId, period: item.period } : { kind: 'installment', id: item.refId, index: item.index };
+  openDialog({
+    title: item.description,
+    eyebrow: isRecurring ? 'Previsão de recorrente' : 'Parcela prevista',
+    body: `
+      <p class="dialog-text">${item.variable ? 'Valor variável' : esc(money(item.amount))} · ${esc(item.type === 'income' ? 'previsto para' : 'vence em')} ${esc(fmtDate(item.date))}.
+      Isto ainda é uma previsão; só vira lançamento quando você confirmar.</p>
+      <div class="menu">
+        ${item.onCard ? '' : `<button type="button" data-do="pay">${item.type === 'income' ? 'Registrar recebimento' : 'Registrar pagamento'}</button>`}
+        <button type="button" data-do="adjust">Ajustar valor ou data só neste mês</button>
+        ${isRecurring ? '<button type="button" data-do="skip">Pular este mês</button>' : ''}
+        <button type="button" data-do="open">${isRecurring ? 'Editar o recorrente' : 'Ver o parcelamento'}</button>
+      </div>`,
+    onMount(dialog, close) {
+      dialog.querySelector('.menu').addEventListener('click', (event) => {
+        const what = event.target.closest('[data-do]')?.dataset.do;
+        if (!what) return;
+        close();
+        if (what === 'pay') payItem(ctx, item);
+        if (what === 'adjust') {
+          openEntryForm(ctx, null, {
+            type: item.type, description: item.description, amount: item.amount || null, date: item.date,
+            categoryId: item.categoryId, accountId: item.accountId, personId: item.personId, scope: item.scope, paid: false, source,
+          });
+        }
+        if (what === 'skip') {
+          update((s) => {
+            const r = s.recurring.find((x) => x.id === item.refId);
+            r.skips = [...(r.skips || []), item.period];
+          });
+          toast(`${item.description} não entra em ${fmtMonth(item.period)}.`, undoAction);
+        }
+        if (what === 'open') {
+          if (isRecurring) openRecurringForm(ctx, state.recurring.find((r) => r.id === item.refId));
+          else openInstallmentDetail(ctx, state.installments.find((p) => p.id === item.refId));
+        }
+      });
+    },
+  });
+}
+
+// ------------------------------------------------------------- recorrentes
+
+export function openRecurringForm(ctx, recurring = null) {
+  const state = getState();
+  const base = recurring || { type: 'expense', description: '', amount: null, day: 5, categoryId: null, accountId: defaultMoneyAccount(state), personId: ctx.me, scope: 'house', start: null, end: null };
+  const values = { ...movementValues(base), applyFrom: 'always', from: ctx.ym };
+  const fields = movementFields(state, values).filter((f) => f.name !== 'date' && f.name !== 'paid');
+  fields.find((f) => f.name === 'amount').required = false;
+  fields.find((f) => f.name === 'amount').hint = 'Deixe vazio se o valor muda todo mês.';
+  fields.splice(3, 0, { name: 'day', label: 'Dia do mês', type: 'number', min: 1, max: 31, required: true });
+  fields.push(
+    { name: 'start', label: 'Começa em (opcional)', type: 'month' },
+    { name: 'end', label: 'Termina em (opcional)', type: 'month' },
+  );
+  if (recurring) {
+    fields.push(
+      { name: 'applyFrom', label: 'Aplicar as mudanças', type: 'segmented', options: [{ value: 'always', label: 'Em todos os meses' }, { value: 'from', label: 'A partir de um mês' }], hint: 'Use "a partir de um mês" para reajustes: os meses anteriores ficam como estavam.' },
+      { name: 'from', label: 'A partir de', type: 'month', showIf: (v) => v.applyFrom === 'from' },
+    );
+  }
+  openForm({
+    title: recurring ? 'Editar recorrente' : 'Novo recorrente',
+    eyebrow: 'Conta ou receita que se repete todo mês',
+    fields,
+    values,
+    onSubmit(v) {
+      if (v.day < 1 || v.day > 31) return 'O dia precisa estar entre 1 e 31.';
+      if (v.start && v.end && v.end < v.start) return 'O fim não pode ser antes do começo.';
+      const m = readMovement(v);
+      const data = { description: m.description, amount: m.amount || 0, type: m.type, categoryId: m.categoryId, accountId: m.accountId, personId: m.personId, scope: m.scope, day: v.day };
+      update((s) => {
+        if (!recurring) {
+          s.recurring.push({ id: uid(), ...data, start: v.start || null, end: v.end || null, active: true, skips: [], changes: [] });
+          return;
+        }
+        const r = s.recurring.find((x) => x.id === recurring.id);
+        r.start = v.start || null;
+        r.end = v.end || null;
+        if (v.applyFrom === 'from' && v.from) {
+          const { type: _type, ...change } = data;
+          r.changes = [...(r.changes || []).filter((c) => c.from !== v.from), { from: v.from, ...change }];
+        } else {
+          Object.assign(r, data);
+          r.changes = [];
+        }
+      });
+      toast(recurring ? 'Recorrente atualizado.' : 'Recorrente criado.');
+    },
+    actions: recurring ? [
+      {
+        label: recurring.active ? 'Pausar' : 'Reativar',
+        run(close) {
+          close();
+          update((s) => { const r = s.recurring.find((x) => x.id === recurring.id); r.active = !r.active; });
+          toast(recurring.active ? 'Recorrente pausado: sai das previsões.' : 'Recorrente reativado.', undoAction);
+        },
+      },
+      {
+        label: 'Apagar', danger: true,
+        run(close) {
+          close();
+          update((s) => {
+            s.recurring = s.recurring.filter((x) => x.id !== recurring.id);
+            for (const e of s.entries) if (e.source?.kind === 'recurring' && e.source.id === recurring.id) delete e.source;
+          });
+          toast('Recorrente apagado. Os lançamentos já feitos foram mantidos.', undoAction);
+        },
+      },
+    ] : [],
+  });
+}
+
+// ----------------------------------------------------------- parcelamentos
+
+export function openInstallmentForm(ctx, inst = null) {
+  const state = getState();
+  const base = inst || { description: '', amount: null, count: null, first: ctx.today, paidBefore: 0, categoryId: null, accountId: state.accounts.find((a) => isCard(a))?.id || '', personId: ctx.me, scope: 'personal' };
+  openForm({
+    title: inst ? 'Editar parcelamento' : 'Novo parcelamento',
+    eyebrow: 'Compra parcelada ou financiamento',
+    fields: [
+      { name: 'description', label: 'Descrição', required: true, full: true },
+      { name: 'amount', label: 'Valor da parcela', type: 'money', required: true },
+      { name: 'count', label: 'Número de parcelas', type: 'number', min: 1, required: true },
+      { name: 'first', label: 'Vencimento da 1ª parcela', type: 'date', required: true },
+      { name: 'paidBefore', label: 'Parcelas já pagas antes do app', type: 'number', min: 0, hint: 'Elas contam como pagas sem criar lançamentos.' },
+      { name: 'categoryId', label: 'Categoria', type: 'select', options: categoryOptions(state, 'expense', base.categoryId) },
+      { name: 'accountId', label: 'Cartão ou crediário', type: 'select', options: accountOptions(state, base.accountId) },
+      { name: 'personId', label: 'Quem', type: 'select', options: personOptions(state) },
+      { name: 'scope', label: 'Essa despesa é', type: 'segmented', options: SCOPE_OPTIONS },
+    ],
+    values: { ...base, personId: base.personId || '' },
+    onSubmit(v) {
+      if (!(v.count >= 1)) return 'Informe o número de parcelas.';
+      if ((v.paidBefore || 0) > v.count) return 'As parcelas já pagas não podem passar do total.';
+      const data = { description: v.description, amount: v.amount, count: v.count, first: v.first, paidBefore: v.paidBefore || 0, categoryId: v.categoryId, accountId: v.accountId, personId: v.personId || null, scope: v.scope };
+      update((s) => {
+        if (inst) Object.assign(s.installments.find((x) => x.id === inst.id), data);
+        else s.installments.push({ id: uid(), ...data });
+      });
+      toast(inst ? 'Parcelamento atualizado.' : 'Parcelamento criado.');
+    },
+    actions: inst ? [{
+      label: 'Apagar', danger: true,
+      run(close) {
+        close();
+        update((s) => {
+          s.installments = s.installments.filter((x) => x.id !== inst.id);
+          for (const e of s.entries) if (e.source?.kind === 'installment' && e.source.id === inst.id) delete e.source;
+        });
+        toast('Parcelamento apagado. Os pagamentos já lançados foram mantidos.', undoAction);
+      },
+    }] : [],
+  });
+}
+
+export function openInstallmentDetail(ctx, inst) {
+  const state = getState();
+  const status = installmentStatus(state, inst);
+  const account = state.accounts.find((a) => a.id === inst.accountId);
+  const rows = status.rows.map((row) => {
+    const label = row.paid ? (row.historical ? 'Paga (antes do app)' : `Paga em ${fmtDate(row.entry.date)}`) : row.entry ? 'Lançada, em aberto' : 'Prevista';
+    const value = row.entry ? row.entry.amount : inst.amount;
+    const diff = row.entry && row.paid ? round2(row.entry.amount - inst.amount) : 0;
+    const note = diff > 0 ? ` <small class="neg">+${esc(money(diff))} de juros</small>` : diff < 0 ? ` <small class="pos">${esc(money(diff))} de desconto</small>` : '';
+    const action = row.entry
+      ? `<button type="button" class="btn small" data-entry="${esc(row.entry.id)}">Corrigir</button>`
+      : !row.paid && row === status.next && !isCard(account) ? `<button type="button" class="btn small primary" data-pay="${row.index}">Pagar</button>` : '';
+    return `<tr class="${row.paid ? 'done' : ''}"><td>${row.index + 1}/${inst.count}</td><td>${esc(fmtMonth(row.month))}</td><td class="num">${esc(money(value))}${note}</td><td>${esc(label)}</td><td class="num">${action}</td></tr>`;
+  }).join('');
+  openDialog({
+    title: inst.description,
+    eyebrow: 'Parcelamento',
+    wide: true,
+    body: `
+      <div class="stats">
+        <div><small>Parcela</small><strong>${esc(money(inst.amount))}</strong></div>
+        <div><small>Pagas</small><strong>${status.paidCount} de ${inst.count}</strong></div>
+        <div><small>Já pago</small><strong>${esc(money(status.paidTotal))}</strong></div>
+        <div><small>Falta pagar</small><strong>${esc(money(status.remainingAmount))}</strong></div>
+      </div>
+      ${isCard(account) ? `<p class="dialog-text">As parcelas entram na fatura do ${esc(account.name)} e são pagas junto com ela.</p>` : ''}
+      <div class="table-scroll"><table class="table"><thead><tr><th>Parcela</th><th>Mês</th><th class="num">Valor</th><th>Situação</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
+      <footer class="dialog-actions"><button type="button" class="btn" data-edit>Editar parcelamento</button><span class="spacer"></span><button type="button" class="btn" data-close>Fechar</button></footer>`,
+    onMount(dialog, close) {
+      dialog.addEventListener('click', (event) => {
+        const entryId = event.target.closest('[data-entry]')?.dataset.entry;
+        const payIndex = event.target.closest('[data-pay]')?.dataset.pay;
+        if (entryId) { close(); openEntryForm(ctx, state.entries.find((e) => e.id === entryId)); }
+        if (payIndex !== undefined) {
+          close();
+          const item = monthItems(state, addMonths(ymOf(inst.first), Number(payIndex))).find((i) => i.key === `i:${inst.id}:${payIndex}`);
+          if (item) payItem(ctx, item);
+        }
+        if (event.target.closest('[data-edit]')) { close(); openInstallmentForm(ctx, inst); }
+      });
+    },
+  });
+}
+
+// ---------------------------------------------------------- metas e dívidas
+
+export function openGoalForm(ctx, goal = null) {
+  openForm({
+    title: goal ? 'Editar meta' : 'Nova meta',
+    fields: [
+      { name: 'name', label: 'Objetivo', required: true, full: true, placeholder: 'Ex.: máquina de lavar' },
+      { name: 'target', label: 'Valor alvo', type: 'money', required: true },
+      { name: 'initial', label: 'Já guardado antes do app', type: 'money' },
+      { name: 'deadline', label: 'Prazo (opcional)', type: 'date' },
+    ],
+    values: goal || {},
+    onSubmit(v) {
+      const data = { name: v.name, target: v.target, initial: v.initial || 0, deadline: v.deadline || null };
+      update((s) => {
+        if (goal) Object.assign(s.goals.find((g) => g.id === goal.id), data);
+        else s.goals.push({ id: uid(), ...data });
+      });
+      toast(goal ? 'Meta atualizada.' : 'Meta criada.');
+    },
+    actions: goal ? [{
+      label: 'Apagar', danger: true,
+      run(close) {
+        close();
+        update((s) => {
+          s.goals = s.goals.filter((g) => g.id !== goal.id);
+          for (const e of s.entries) if (e.source?.kind === 'goal' && e.source.id === goal.id) delete e.source;
+        });
+        toast('Meta apagada.', undoAction);
+      },
+    }] : [],
+  });
+}
+
+export function contributeGoal(ctx, goal) {
+  const state = getState();
+  openForm({
+    title: `Guardar para ${goal.name}`,
+    eyebrow: `Guardado até agora: ${money(goalSaved(state, goal))}`,
+    fields: [
+      { name: 'amount', label: 'Valor', type: 'money', required: true },
+      { name: 'date', label: 'Data', type: 'date', required: true },
+      { name: 'accountId', label: 'Saiu de', type: 'select', required: true, options: accountOptions(state, null, isMoneyAccount) },
+      { name: 'personId', label: 'Quem guardou', type: 'select', options: personOptions(state) },
+    ],
+    values: { date: ctx.today, accountId: defaultMoneyAccount(state), personId: ctx.me || '' },
+    submitLabel: 'Guardar',
+    onSubmit(v) {
+      update((s) => {
+        s.entries.push({
+          id: uid(), date: v.date, description: `Reserva — ${goal.name}`, amount: v.amount, type: 'expense',
+          categoryId: ensureCategory(s, 'Reserva e investimentos', { group: 'invest' }), accountId: v.accountId,
+          personId: v.personId || null, scope: 'personal', paid: true, source: { kind: 'goal', id: goal.id },
+        });
+      });
+      toast('Valor guardado na meta.', undoAction);
+    },
+  });
+}
+
+export function openDebtForm(ctx, debt = null) {
+  const state = getState();
+  const paidSoFar = debt ? round2(debt.initial - debtBalance(state, debt)) : 0;
+  openForm({
+    title: debt ? 'Editar dívida' : 'Nova dívida',
+    fields: [
+      { name: 'name', label: 'Para quem', required: true, full: true, placeholder: 'Ex.: Nubank' },
+      { name: 'initial', label: debt && paidSoFar > 0 ? 'Valor original da dívida' : 'Saldo devedor', type: 'money', required: true, hint: debt && paidSoFar > 0 ? `Já foram pagos ${money(paidSoFar)} pelo app.` : '' },
+      { name: 'payment', label: 'Parcela combinada (opcional)', type: 'money' },
+      { name: 'rate', label: 'Juros ao mês em % (opcional)', type: 'number', min: 0, step: 0.01 },
+    ],
+    values: debt ? { ...debt, rate: debt.rate || '' } : {},
+    onSubmit(v) {
+      const data = { name: v.name, initial: v.initial, payment: v.payment || 0, rate: v.rate || 0 };
+      update((s) => {
+        if (debt) Object.assign(s.debts.find((d) => d.id === debt.id), data);
+        else s.debts.push({ id: uid(), ...data });
+      });
+      toast(debt ? 'Dívida atualizada.' : 'Dívida cadastrada.');
+    },
+    actions: debt ? [{
+      label: 'Apagar', danger: true,
+      run(close) {
+        close();
+        update((s) => {
+          s.debts = s.debts.filter((d) => d.id !== debt.id);
+          for (const e of s.entries) if (e.source?.kind === 'debt' && e.source.id === debt.id) delete e.source;
+        });
+        toast('Dívida apagada.', undoAction);
+      },
+    }] : [],
+  });
+}
+
+export function payDebt(ctx, debt) {
+  const state = getState();
+  const balance = debtBalance(state, debt);
+  openForm({
+    title: `Pagar ${debt.name}`,
+    eyebrow: `Saldo devedor: ${money(balance)}`,
+    fields: [
+      { name: 'amount', label: 'Valor pago', type: 'money', required: true },
+      { name: 'date', label: 'Data', type: 'date', required: true },
+      { name: 'accountId', label: 'Saiu de', type: 'select', required: true, options: accountOptions(state, null, isMoneyAccount) },
+      { name: 'personId', label: 'Quem pagou', type: 'select', options: personOptions(state) },
+    ],
+    values: { amount: Math.min(balance, debt.payment || balance), date: ctx.today, accountId: defaultMoneyAccount(state), personId: ctx.me || '' },
+    submitLabel: 'Registrar pagamento',
+    onSubmit(v) {
+      if (v.amount > balance + 0.004) return `O valor passa do saldo devedor (${money(balance)}).`;
+      update((s) => {
+        s.entries.push({
+          id: uid(), date: v.date, description: `Pagamento — ${debt.name}`, amount: v.amount, type: 'expense',
+          categoryId: ensureCategory(s, 'Dívidas', { group: 'need' }), accountId: v.accountId,
+          personId: v.personId || null, scope: 'personal', paid: true, source: { kind: 'debt', id: debt.id },
+        });
+      });
+      toast('Pagamento da dívida registrado.', undoAction);
+    },
+  });
+}
+
+// ---------------------------------------------------------------- cartões
+
+export function payInvoice(ctx, card, invoice) {
+  const state = getState();
+  openForm({
+    title: `Pagar fatura de ${fmtMonth(invoice.month)}`,
+    eyebrow: card.name,
+    intro: `Total da fatura: <strong>${esc(money(invoice.total))}</strong>. Ao confirmar, todos os itens desta fatura passam a contar como pagos.`,
+    fields: [
+      { name: 'date', label: 'Data do pagamento', type: 'date', required: true },
+      { name: 'fromAccountId', label: 'Saiu de', type: 'select', required: true, options: accountOptions(state, null, isMoneyAccount) },
+    ],
+    values: { date: ctx.today, fromAccountId: defaultMoneyAccount(state) },
+    submitLabel: 'Confirmar pagamento',
+    onSubmit(v) {
+      update((s) => {
+        s.invoicePayments.push({ id: uid(), cardId: card.id, month: invoice.month, amount: invoice.total, date: v.date, fromAccountId: v.fromAccountId });
+      });
+      toast('Fatura paga.', undoAction);
+    },
+  });
+}
+
+export async function undoInvoicePayment(card, invoice) {
+  const ok = await confirmDialog({ title: 'Desfazer pagamento da fatura?', message: `A fatura de ${fmtMonth(invoice.month)} do ${card.name} volta a ficar em aberto.`, confirmLabel: 'Desfazer pagamento' });
+  if (!ok) return;
+  update((s) => { s.invoicePayments = s.invoicePayments.filter((p) => p.id !== invoice.payment.id); });
+  toast('Pagamento da fatura desfeito.');
+}
+
+// --------------------------------------------------------- divisão da casa
+
+export function openSplitForm() {
+  const state = getState();
+  const shareFields = state.people.map((p) => ({ name: `share_${p.id}`, label: `Parte de ${p.name} (%)`, type: 'number', min: 0, max: 100, showIf: (v) => v.mode === 'custom' }));
+  const values = { mode: state.split.mode };
+  for (const p of state.people) values[`share_${p.id}`] = state.split.shares?.[p.id] ?? Math.round(100 / state.people.length);
+  openForm({
+    title: 'Como vocês dividem as contas da casa',
+    fields: [
+      { name: 'mode', label: 'Divisão', type: 'segmented', options: [{ value: 'equal', label: 'Meio a meio' }, { value: 'income', label: 'Proporcional à renda' }, { value: 'custom', label: 'Percentual fixo' }], hint: 'Proporcional à renda usa as receitas de cada um no mês.' },
+      ...shareFields,
+    ],
+    values,
+    onSubmit(v) {
+      const shares = Object.fromEntries(state.people.map((p) => [p.id, Number(v[`share_${p.id}`]) || 0]));
+      if (v.mode === 'custom' && Math.round(Object.values(shares).reduce((a, b) => a + b, 0)) !== 100) return 'Os percentuais precisam somar 100.';
+      update((s) => { s.split = { mode: v.mode, shares }; });
+      toast('Divisão atualizada.');
+    },
+  });
+}
+
+export function settle(ctx, transfer) {
+  const state = getState();
+  const people = byId(state.people);
+  openForm({
+    title: 'Registrar acerto',
+    eyebrow: `${people.get(transfer.from).name} paga ${people.get(transfer.to).name}`,
+    fields: [
+      { name: 'amount', label: 'Valor transferido', type: 'money', required: true },
+      { name: 'date', label: 'Data', type: 'date', required: true },
+    ],
+    values: { amount: transfer.amount, date: ctx.today },
+    submitLabel: 'Registrar',
+    onSubmit(v) {
+      update((s) => { s.settlements.push({ id: uid(), month: ctx.ym, from: transfer.from, to: transfer.to, amount: v.amount, date: v.date }); });
+      toast('Acerto registrado.', undoAction);
+    },
+  });
+}
+
+export function removeSettlement(id) {
+  update((s) => { s.settlements = s.settlements.filter((x) => x.id !== id); });
+  toast('Acerto removido.', undoAction);
+}
+
+// --------------------------------------------------------------- cadastros
+
+export function openPersonForm(person) {
+  openForm({
+    title: 'Editar pessoa',
+    fields: [{ name: 'name', label: 'Nome', required: true }, { name: 'color', label: 'Cor', type: 'color' }],
+    values: person,
+    onSubmit(v) {
+      update((s) => Object.assign(s.people.find((p) => p.id === person.id), { name: v.name, color: v.color }));
+    },
+  });
+}
+
+export function openAccountForm(account = null, newType = 'bank') {
+  const state = getState();
+  const cardOnly = (v) => v.type === 'card';
+  openForm({
+    title: account ? 'Editar conta' : 'Nova conta ou cartão',
+    fields: [
+      { name: 'name', label: 'Nome', required: true, full: true, placeholder: 'Ex.: Inter, Nubank, Carteira' },
+      { name: 'type', label: 'Tipo', type: 'select', options: Object.entries(ACCOUNT_TYPES).map(([value, label]) => ({ value, label })) },
+      { name: 'opening', label: 'Saldo inicial', type: 'money', showIf: (v) => v.type === 'bank' || v.type === 'cash', hint: 'Quanto havia na conta quando você começou a usar o app.' },
+      { name: 'closingDay', label: 'Dia do fechamento', type: 'number', min: 1, max: 31, showIf: cardOnly },
+      { name: 'dueDay', label: 'Dia do vencimento', type: 'number', min: 1, max: 31, showIf: cardOnly },
+      { name: 'limit', label: 'Limite', type: 'money', showIf: cardOnly },
+    ],
+    values: account || { type: newType },
+    onSubmit(v) {
+      if (state.accounts.some((a) => a.id !== account?.id && norm(a.name) === norm(v.name))) return 'Já existe uma conta com esse nome.';
+      if (v.type === 'card' && (!v.closingDay || !v.dueDay)) return 'Informe o fechamento e o vencimento do cartão.';
+      const data = { name: v.name, type: v.type, opening: v.opening || 0, closingDay: v.closingDay || null, dueDay: v.dueDay || null, limit: v.limit || 0 };
+      update((s) => {
+        if (account) Object.assign(s.accounts.find((a) => a.id === account.id), data);
+        else s.accounts.push({ id: uid(), archived: false, ...data });
+      });
+    },
+    actions: account ? [archiveAction('accounts', 'accountId', account)] : [],
+  });
+}
+
+export function openCategoryForm(category = null) {
+  const state = getState();
+  openForm({
+    title: category ? 'Editar categoria' : 'Nova categoria',
+    fields: [
+      { name: 'name', label: 'Nome', required: true, full: true },
+      { name: 'kind', label: 'Tipo', type: 'segmented', options: TYPE_OPTIONS },
+      { name: 'group', label: 'Grupo', type: 'select', options: Object.entries(GROUPS).map(([value, label]) => ({ value, label })), showIf: (v) => v.kind === 'expense' },
+      { name: 'budget', label: 'Limite mensal (opcional)', type: 'money', showIf: (v) => v.kind === 'expense', hint: 'Aparece no orçamento da visão geral.' },
+      { name: 'estimate', label: 'Gasto variável estimado (opcional)', type: 'money', showIf: (v) => v.kind === 'expense', hint: 'Reservado na projeção dos meses futuros (ex.: mercado).' },
+    ],
+    values: category || { kind: 'expense', group: 'need' },
+    onSubmit(v) {
+      if (state.categories.some((c) => c.id !== category?.id && norm(c.name) === norm(v.name))) return 'Já existe uma categoria com esse nome.';
+      const data = { name: v.name, kind: v.kind, group: v.kind === 'expense' ? v.group : null, budget: v.budget || 0, estimate: v.estimate || 0 };
+      update((s) => {
+        if (category) Object.assign(s.categories.find((c) => c.id === category.id), data);
+        else s.categories.push({ id: uid(), archived: false, ...data });
+      });
+    },
+    actions: category ? [archiveAction('categories', 'categoryId', category)] : [],
+  });
+}
+
+/** Cadastro em uso é arquivado (some das listas, mantém o histórico); sem uso, é apagado. */
+function archiveAction(listName, field, item) {
+  const used = usageCount(getState(), field, item.id);
+  const label = item.archived ? 'Reativar' : used ? 'Arquivar' : 'Apagar';
+  return {
+    label,
+    danger: !item.archived,
+    run(close) {
+      close();
+      update((s) => {
+        if (item.archived || used) s[listName].find((x) => x.id === item.id).archived = !item.archived;
+        else s[listName] = s[listName].filter((x) => x.id !== item.id);
+      });
+      toast(item.archived ? `${item.name} reativado.` : used ? `${item.name} arquivado: os ${used} registros que o usam foram mantidos.` : `${item.name} apagado.`, undoAction);
+    },
+  };
+}
+
+// ------------------------------------------------------------ extrato OFX
+
+export async function importOfxFile(ctx, file) {
+  const state = getState();
+  let rows;
+  try {
+    rows = parseOfx(decodeOfx(await file.arrayBuffer()));
+  } catch {
+    rows = [];
+  }
+  if (!rows.length) {
+    toast('Não encontrei transações nesse arquivo. Confira se é um extrato OFX.');
+    return;
+  }
+  const { fresh, duplicates } = splitNewOfx(state, rows);
+  const preview = fresh.slice(0, 60).map((r) => `<tr><td>${esc(fmtDate(r.date))}</td><td>${esc(r.description)}</td><td class="num ${r.type === 'income' ? 'pos' : ''}">${r.type === 'income' ? '+' : '−'} ${esc(money(r.amount))}</td></tr>`).join('');
+  openDialog({
+    title: 'Extrato lido',
+    eyebrow: file.name,
+    wide: true,
+    body: `
+      <p class="dialog-text"><strong>${fresh.length}</strong> transações novas${duplicates ? ` · ${duplicates} já importadas antes foram descartadas` : ''}.
+      Nada entra nos lançamentos agora: elas vão para uma fila e você confirma uma por uma.</p>
+      <label class="field"><span>Conta deste extrato</span><select data-account>${accountOptions(state).map((o) => `<option value="${esc(o.value)}">${esc(o.label)}</option>`).join('')}</select></label>
+      ${fresh.length ? `<div class="table-scroll"><table class="table"><thead><tr><th>Data</th><th>Descrição</th><th class="num">Valor</th></tr></thead><tbody>${preview}</tbody></table></div>` : ''}
+      ${fresh.length > 60 ? `<p class="hint">Mostrando as 60 primeiras de ${fresh.length}.</p>` : ''}
+      <footer class="dialog-actions"><span class="spacer"></span><button type="button" class="btn" data-close>Cancelar</button><button type="button" class="btn primary" data-queue ${fresh.length ? '' : 'disabled'}>Enviar para a fila de revisão</button></footer>`,
+    onMount(dialog, close) {
+      const select = dialog.querySelector('[data-account]');
+      select.value = defaultMoneyAccount(state);
+      dialog.querySelector('[data-queue]').addEventListener('click', () => {
+        const accountId = select.value;
+        update((s) => { for (const row of fresh) s.ofxPending.push({ id: uid(), accountId, ...row }); });
+        close();
+        toast(`${fresh.length} transações aguardando revisão.`);
+        ctx.navigate('lancamentos');
+      });
+    },
+  });
+}
+
+/** Revisão de uma transação do extrato: só vira lançamento ao confirmar. */
+export function reviewOfx(ctx, row) {
+  const state = getState();
+  const month = ymOf(row.date);
+  // Previsões e contas em aberto do mesmo mês que esta transação pode estar quitando.
+  const candidates = monthItems(state, month).filter((i) => !i.paid && !i.onCard && i.type === row.type);
+  const guess = candidates.find((i) => Math.abs(i.amount - row.amount) < 0.005) || null;
+  const firstCategory = (kind) => state.categories.find((c) => c.kind === kind && !c.archived)?.id;
+  const base = {
+    type: row.type, description: row.description, amount: row.amount, date: row.date,
+    categoryId: guess?.categoryId || firstCategory(row.type), accountId: row.accountId || defaultMoneyAccount(state),
+    personId: guess ? guess.personId : ctx.me, scope: guess?.scope || 'personal',
+  };
+  const values = { ...movementValues(base), link: guess?.key || '' };
+  const fields = movementFields(state, values).filter((f) => f.name !== 'paid');
+  if (candidates.length) {
+    fields.push({
+      name: 'link', label: 'Isto quita uma conta prevista?', type: 'select', full: true,
+      options: [{ value: '', label: 'Não, é um lançamento novo' }, ...candidates.map((i) => ({ value: i.key, label: `${i.description} — ${money(i.amount)}` }))],
+      hint: 'Vinculando, a previsão sai do mês e não é contada duas vezes.',
+    });
+  }
+  openForm({
+    title: 'Revisar transação do extrato',
+    eyebrow: row.memo || 'Extrato OFX',
+    fields,
+    values,
+    submitLabel: 'Confirmar lançamento',
+    onSubmit(v) {
+      const data = readMovement(v);
+      const linked = candidates.find((i) => i.key === v.link);
+      update((s) => {
+        s.ofxPending = s.ofxPending.filter((x) => x.id !== row.id);
+        if (linked?.kind === 'entry') {
+          Object.assign(s.entries.find((e) => e.id === linked.id), { ...data, paid: true, importId: row.importId });
+          return;
+        }
+        const source = linked?.kind === 'recurring' ? { kind: 'recurring', id: linked.refId, period: linked.period }
+          : linked?.kind === 'installment' ? { kind: 'installment', id: linked.refId, index: linked.index } : null;
+        s.entries.push({ id: uid(), ...data, paid: true, importId: row.importId, ...(source ? { source } : {}) });
+      });
+      toast('Transação confirmada.', undoAction);
+    },
+    actions: [{
+      label: 'Ignorar', danger: true,
+      run(close) {
+        close();
+        update((s) => {
+          s.ofxPending = s.ofxPending.filter((x) => x.id !== row.id);
+          s.ofxIgnored.push(row.importId);
+        });
+        toast('Transação ignorada.', undoAction);
+      },
+    }],
+  });
+}
+
+// ------------------------------------------------------------------ backup
+
+export function exportBackup() {
+  const blob = new Blob([JSON.stringify(getState(), null, 1)], { type: 'application/json' });
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = `monetizeo-backup-${today()}.json`;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+}
+
+export async function importBackup(file) {
+  let data;
+  try {
+    data = JSON.parse(await file.text());
+    if (data.state && data.rev !== undefined) data = data.state;
+    if (!Array.isArray(data.entries)) throw new Error('formato');
+  } catch {
+    toast('Esse arquivo não é um backup do Monetizeo.');
+    return;
+  }
+  const state = getState();
+  const hasData = state.entries.length || state.recurring.length;
+  if (hasData) {
+    const ok = await confirmDialog({
+      title: 'Substituir todos os dados?',
+      message: `O backup tem ${data.entries.length} lançamentos${isLegacy(data) ? ' (formato antigo, será convertido)' : ''}. Os dados atuais serão trocados pelos do arquivo.`,
+      confirmLabel: 'Substituir', danger: true,
+    });
+    if (!ok) return;
+  }
+  replaceAll(data);
+  toast('Backup restaurado.', hasData ? undoAction : undefined);
+}

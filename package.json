@@ -1,0 +1,12 @@
+{
+  "name": "monetizeo",
+  "version": "0.3.0",
+  "private": true,
+  "type": "module",
+  "description": "Painel financeiro do casal: contas da casa, cartões, parcelas e projeção.",
+  "scripts": {
+    "start": "python server.py",
+    "test": "node --test \"tests/*.test.mjs\""
+  },
+  "engines": { "node": ">=20" }
+}

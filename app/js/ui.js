@@ -185,7 +185,7 @@ export function openForm({ title, eyebrow, fields, values = {}, submitLabel = 'S
           if (field.showIf && !field.showIf(current)) continue;
           const value = current[field.name];
           if (field.required && (value === '' || value === null || value === undefined)) message = `Preencha "${field.label}".`;
-          else if (field.type === 'money' && value !== null && (!Number.isFinite(value) || value < 0)) message = `"${field.label}" precisa ser um valor válido.`;
+          else if (field.type === 'money' && value !== null && (!Number.isFinite(value) || (value < 0 && !field.allowNegative))) message = `"${field.label}" precisa ser um valor válido.`;
           else if (field.type === 'money' && field.required && !(value > 0) && !field.allowZero) message = `"${field.label}" precisa ser maior que zero.`;
           if (message) break;
         }
@@ -209,3 +209,4 @@ export function bar(fraction, { tone = '' } = {}) {
   const pct = Math.max(0, Math.min(1, fraction || 0)) * 100;
   return `<div class="bar ${tone}"><i style="width:${pct.toFixed(1)}%"></i></div>`;
 }
+

@@ -6,7 +6,7 @@ import {
   accountBalance, cardCommitted, cardInvoice, dailyAllowance, debtBalance, emptyState, goalPlan, houseSplit, installmentStatus,
   invoiceMonthFor, isOverdue, leftover, loanStatus, monthItems, openLoans, projection, recurringConfig, summarize,
 } from '../app/js/model.js';
-import { decodeOfx, parseOfx, splitNewOfx } from '../app/js/ofx.js';
+import { decodeOfx, invoiceImportChange, invoiceImportTargets, parseOfx, splitNewOfx, withoutInvoicePayment } from '../app/js/ofx.js';
 import { addMonths, dateIn, monthDiff, parseMoney, today } from '../app/js/util.js';
 
 function fixture() {
@@ -141,6 +141,90 @@ test('saldo da conta só conta o que já foi pago ou recebido', () => {
     { id: 'c', date: '2026-03-07', description: 'Previsto', amount: 999, type: 'expense', accountId: 'banco', paid: false },
   );
   assert.equal(accountBalance(s, s.accounts[0]), 900);
+});
+
+test('saldo datado: inclui o dia inicial, ignora previsões e movimentos depois de hoje', () => {
+  const s = fixture();
+  const bank = { ...s.accounts[0], opening: -100, openingDate: '2026-03-05' };
+  s.entries = [
+    { id: 'old', accountId: bank.id, date: '2026-03-04', amount: 999, type: 'income', paid: true },
+    { id: 'start', accountId: bank.id, date: '2026-03-05', amount: 400, type: 'income', paid: true },
+    { id: 'today', accountId: bank.id, date: '2026-03-10', amount: 50, type: 'expense', paid: true },
+    { id: 'future', accountId: bank.id, date: '2026-03-11', amount: 800, type: 'income', paid: true },
+    { id: 'pending', accountId: bank.id, date: '2026-03-06', amount: 900, type: 'expense', paid: false },
+    { id: 'card', accountId: 'cartao', date: '2026-03-06', amount: 1000, type: 'expense', paid: true },
+  ];
+  s.invoicePayments = [
+    { id: 'before', fromAccountId: bank.id, date: '2026-03-04', amount: 100 },
+    { id: 'paid', fromAccountId: bank.id, date: '2026-03-05', amount: 70 },
+    { id: 'future', fromAccountId: bank.id, date: '2026-03-11', amount: 300 },
+  ];
+  assert.equal(accountBalance(s, bank, '2026-03-10'), 180);
+  assert.equal(accountBalance(s, bank, '2026-03-04'), null);
+  // Sem data inicial, backups antigos continuam incluindo todo o histórico pago.
+  assert.equal(accountBalance(s, s.accounts[0], '2026-03-10'), 1279);
+  assert.equal(accountBalance(s, s.accounts[0]), 1779);
+});
+
+test('saldo acumulado segue a data real de pagamento, não a competência, e transferências se anulam', () => {
+  const s = fixture();
+  s.accounts.push({ id: 'wallet', type: 'cash', opening: 0 });
+  s.entries = [
+    { accountId: 'banco', date: '2026-02-20', type: 'income', amount: 500, paid: true },
+    { accountId: 'banco', date: '2026-03-01', type: 'expense', amount: 100, paid: true, source: { kind: 'recurring', id: 'aluguel', period: '2026-02' } },
+    { accountId: 'banco', date: '2026-03-02', type: 'expense', amount: 50, paid: true },
+    { accountId: 'wallet', date: '2026-03-02', type: 'income', amount: 50, paid: true },
+  ];
+  assert.equal(accountBalance(s, s.accounts[0], '2026-02-28'), 600);
+  assert.equal(accountBalance(s, s.accounts[0], '2026-03-02') + accountBalance(s, s.accounts[3], '2026-03-02'), 500);
+});
+
+test('OFX vinculado ao pagamento já registrado não duplica débito, reimportação ou despesas', () => {
+  const s = fixture();
+  const row = { id: 'row', importId: 'ofx:invoice', amount: 350, date: '2026-03-10', type: 'expense', accountId: 'banco', description: 'Fatura' };
+  s.ofxPending = [row];
+  s.invoicePayments = [{ id: 'payment', cardId: 'cartao', month: '2026-03', amount: 350, date: row.date, fromAccountId: 'banco' }];
+  const before = accountBalance(s, s.accounts[0], row.date);
+  const data = { type: 'expense', amount: row.amount, date: row.date, accountId: 'banco' };
+  const change = invoiceImportChange(s, row, data, 'payment:payment', 'new-id');
+  assert.equal(s.invoicePayments[0].importId, undefined); // regra pura não altera o original
+  Object.assign(s, change);
+  assert.equal(accountBalance(s, s.accounts[0], row.date), before);
+  assert.equal(s.entries.length, 0);
+  assert.equal(s.invoicePayments.length, 1);
+  assert.equal(s.ofxPending.length, 0);
+  assert.equal(splitNewOfx(s, [row]).duplicates, 1);
+  // Desfazer o pagamento devolve a transação à fila e libera o saldo uma única vez.
+  Object.assign(s, withoutInvoicePayment(s, 'payment'));
+  assert.equal(accountBalance(s, s.accounts[0], row.date), 100);
+  assert.deepEqual(s.ofxPending, [row]);
+  assert.equal(splitNewOfx(s, [row]).duplicates, 1);
+  Object.assign(s, withoutInvoicePayment(s, 'payment'));
+  assert.equal(s.ofxPending.length, 1);
+});
+
+test('OFX pode quitar explicitamente fatura aberta; valida valor, conta, tipo e repetição', () => {
+  const s = fixture();
+  s.recurring = [];
+  s.entries = [{ id: 'purchase', date: '2026-03-01', type: 'expense', amount: 200, accountId: 'cartao', paid: false }];
+  const row = { id: 'row', importId: 'ofx:new-invoice', date: '2026-03-10', type: 'expense', amount: 200, accountId: 'banco' };
+  s.ofxPending = [row];
+  const target = invoiceImportTargets(s, row).find((target) => target.month === '2026-03');
+  assert.ok(target);
+  const data = { ...row };
+  assert.throws(() => invoiceImportChange(s, row, { ...data, amount: 100 }, target.key, 'payment'), /valor do extrato/);
+  assert.throws(() => invoiceImportChange(s, row, { ...data, accountId: 'cartao' }, target.key, 'payment'), /conta bancária/);
+  assert.throws(() => invoiceImportChange(s, row, { ...data, type: 'income' }, target.key, 'payment'), /conta bancária/);
+  assert.deepEqual(invoiceImportTargets(s, { ...row, type: 'income' }), []);
+  Object.assign(s, invoiceImportChange(s, row, data, target.key, 'payment'));
+  assert.equal(cardInvoice(s, s.accounts[1], '2026-03').paid, true);
+  assert.equal(accountBalance(s, s.accounts[0], row.date), -100);
+  assert.equal(s.entries.length, 1);
+  assert.throws(() => invoiceImportChange(s, row, data, target.key, 'second'), /mudou/);
+  // Reverter a confirmação inteira (snapshot) recupera exatamente a fila e a fatura aberta.
+  Object.assign(s, withoutInvoicePayment(s, 'payment'));
+  assert.equal(cardInvoice(s, s.accounts[1], '2026-03').paid, false);
+  assert.equal(s.ofxPending[0].importId, row.importId);
 });
 
 test('divisão da casa: meio a meio, proporcional à renda e acerto', () => {
@@ -291,3 +375,4 @@ test('gasto por dia: divide a sobra pelos dias que faltam, só no mês atual', (
   assert.equal(dailyAllowance(600, '2026-11-11', '2026-12'), null); // outro mês
   assert.equal(dailyAllowance(-50, '2026-11-11', '2026-11'), null); // sem sobra
 });
+

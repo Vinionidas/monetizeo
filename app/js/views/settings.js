@@ -4,7 +4,7 @@ import { exportBackup, importBackup, openAccountForm, openCategoryForm, openPers
 import { ACCOUNT_TYPES, GROUPS, accountBalance, isMoneyAccount } from '../model.js';
 import * as cloud from '../cloud.js';
 import { getHousehold, getMode, signOut } from '../store.js';
-import { esc, money } from '../util.js';
+import { esc, fmtDate, money } from '../util.js';
 import { personDot, sectionHead } from './shared.js';
 
 const SPLIT = { equal: 'Meio a meio', income: 'Proporcional à renda', custom: 'Percentual fixo' };
@@ -37,13 +37,14 @@ function accountsSection(ctx) {
   const { state } = ctx;
   const rows = state.accounts.map((a) => {
     const detail = a.type === 'card' ? `fecha dia ${a.closingDay || '?'} · vence dia ${a.dueDay || '?'}${a.limit > 0 ? ` · limite ${money(a.limit)}` : ''}` : ACCOUNT_TYPES[a.type];
-    const side = isMoneyAccount(a) ? `<strong>${esc(money(accountBalance(state, a)))}</strong><small>saldo</small>` : `<small>${esc(ACCOUNT_TYPES[a.type])}</small>`;
+    const balance = isMoneyAccount(a) ? accountBalance(state, a, ctx.today) : null;
+    const side = isMoneyAccount(a) ? `${balance === null ? '<small>Data inicial futura</small>' : `<strong class="${balance < 0 ? 'neg' : ''}">${esc(money(balance))}</strong>`}<small>saldo calculado hoje</small>` : `<small>${esc(ACCOUNT_TYPES[a.type])}</small>`;
     return `<li class="row${a.archived ? ' paid' : ''}"><button type="button" class="row-body" data-action="account" data-id="${esc(a.id)}"><span class="row-main"><span class="row-title">${esc(a.name)}${a.archived ? '<span class="tag">arquivada</span>' : ''}</span><span class="row-sub">${esc(detail)}</span></span><span class="row-side">${side}</span></button></li>`;
   }).join('');
   return `
     <section class="card">
       <header class="card-head"><h2>Contas e cartões</h2><button type="button" class="btn small primary" data-action="new-account">Nova conta</button></header>
-      <p class="muted">O saldo soma o saldo inicial e tudo o que já foi pago ou recebido na conta.</p>
+      <p class="muted">Saldo calculado até ${esc(fmtDate(ctx.today))}: saldo inicial mais entradas e saídas pagas, incluindo faturas. Edite a conta para informar a data inicial; sem ela, todo o histórico é somado.</p>
       <ul class="rows">${rows}</ul>
     </section>`;
 }
@@ -115,3 +116,4 @@ export const actions = {
   export: () => exportBackup(),
   logout: () => signOut().then(() => location.reload()),
 };
+

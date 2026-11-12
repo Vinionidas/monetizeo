@@ -379,15 +379,17 @@ export function cardCommitted(state, card, currentYm, horizon = 36) {
 
 // ----------------------------------------------------------------- saldos
 
-/** Saldo de uma conta bancária ou carteira: só o que já foi pago ou recebido. */
-export function accountBalance(state, account) {
+/** Saldo pago/recebido até asOf (opcional). openingDate é o início do dia; sem ela, mantém todo o histórico dos backups antigos. */
+export function accountBalance(state, account, asOf = null) {
+  if (asOf && account.openingDate && account.openingDate > asOf) return null;
+  const inPeriod = (date) => (!account.openingDate || date >= account.openingDate) && (!asOf || date <= asOf);
   let balance = Number(account.opening) || 0;
   for (const e of state.entries) {
-    if (e.accountId !== account.id || !e.paid) continue;
+    if (e.accountId !== account.id || !e.paid || !inPeriod(e.date)) continue;
     balance += e.type === 'income' ? e.amount : -e.amount;
   }
   for (const p of state.invoicePayments) {
-    if (p.fromAccountId === account.id) balance -= p.amount;
+    if (p.fromAccountId === account.id && inPeriod(p.date)) balance -= p.amount;
   }
   return round2(balance);
 }
@@ -456,3 +458,4 @@ export function usageCount(state, field, id) {
   const lists = [state.entries, state.recurring, state.installments, state.ofxPending];
   return lists.reduce((n, list) => n + list.filter((x) => x[field] === id).length, 0);
 }
+

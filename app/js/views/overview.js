@@ -1,14 +1,35 @@
 // Visão geral: quanto sobra no mês, o que vence, a divisão da casa, cartões,
 // orçamento e os próximos meses.
 
-import { openItem, payItem, receiveLoan } from '../actions.js';
-import { cardInvoice, dailyAllowance, expensesByCategory, houseSplit, isCard, isOverdue, leftover, monthItems, openLoans, projection, splitShares } from '../model.js';
+import { openAccountForm, openItem, payItem, receiveLoan } from '../actions.js';
+import { accountBalance, cardInvoice, dailyAllowance, expensesByCategory, houseSplit, isCard, isMoneyAccount, isOverdue, leftover, monthItems, openLoans, projection, splitShares } from '../model.js';
 import { bar } from '../ui.js';
 import { byId, esc, fmtDate, fmtDay, fmtMonth, fmtMonthShort, money, percent, sum } from '../util.js';
 
 // Dia de vencimento escolhido em "Contas a pagar" ('' = todas).
 let dueFilter = '';
 import { bigMoney, empty, findItem, itemRow, lookups, personDot, sectionHead } from './shared.js';
+
+function balances(ctx) {
+  const accounts = ctx.state.accounts.filter(isMoneyAccount);
+  if (!accounts.length) return `<section class="card">${sectionHead('Saldo calculado das contas')}${empty('Cadastre sua conta', 'Informe o saldo inicial para acompanhar o que entrou e saiu, sem conectar ao banco.', '<button type="button" class="btn primary" data-action="new-account">Cadastrar conta</button>')}</section>`;
+  const rows = accounts.map((account) => ({ account, balance: accountBalance(ctx.state, account, ctx.today) }));
+  const total = sum(rows, (row) => row.balance);
+  const partial = rows.some((row) => row.balance === null);
+  const list = rows.map(({ account, balance }) => `<li class="row"><button type="button" class="row-body" data-action="account" data-id="${esc(account.id)}"><span class="row-main"><span class="row-title">${esc(account.name)}${account.archived ? ' <span class="tag">arquivada</span>' : ''}</span><span class="row-sub">${account.openingDate ? `Desde o início de ${esc(fmtDate(account.openingDate))}` : 'Saldo inicial sem data · histórico completo'}</span></span><span class="row-side">${balance === null ? '<small>Data inicial futura</small>' : `<strong class="${balance < 0 ? 'neg' : ''}">${esc(money(balance))}</strong>`}</span></button></li>`).join('');
+  return `<section class="card balance-card">
+    ${sectionHead(partial ? 'Saldo parcial das contas' : 'Saldo calculado das contas', `<span class="muted">Hoje · ${esc(fmtDate(ctx.today))}</span>`)}
+    ${bigMoney(total, total < 0 ? 'neg' : '')}
+    ${partial ? '<p class="notice">Há conta com saldo inicial em data futura. Ela não está incluída no total; confira a data no cadastro.</p>' : ''}
+    <p class="muted">Total da casa conforme os lançamentos até hoje.</p>
+    <ul class="rows">${list}</ul>
+    <details class="hint"><summary>Como este saldo é calculado</summary>
+      <p>Bancos e dinheiro de toda a casa, conforme os pagamentos e recebimentos registrados até hoje. Independente do mês ou pessoa selecionados; não é o valor livre para gastar.</p>
+      <p>Não sincronizado com o banco. Confira o saldo inicial e os lançamentos. Aportes em metas são tratados como saídas; acertos da casa só alteram este saldo quando a movimentação é lançada na conta.</p>
+    </details>
+    <a class="more-link" href="#/ajustes">Gerenciar contas e saldos iniciais</a>
+  </section>`;
+}
 
 function hero(ctx, items) {
   const { state } = ctx;
@@ -28,12 +49,12 @@ function hero(ctx, items) {
     </div>` : '';
   const daily = dailyAllowance(lo.left, ctx.today, ctx.ym);
   const dailyLine = daily
-    ? `<p class="daily">Dá para gastar até <strong>${esc(money(daily.perDay))} por dia</strong> ${daily.days === 1 ? 'hoje, último dia do mês' : `nos ${daily.days} dias que faltam`}, sem mexer no que já está reservado para as contas.</p>`
+    ? `<p class="daily">No planejamento, a sobra prevista equivale a <strong>${esc(money(daily.perDay))} por dia</strong> ${daily.days === 1 ? 'hoje, último dia do mês' : `nos ${daily.days} dias que faltam`}. Inclui receitas ainda previstas; não representa dinheiro disponível hoje.</p>`
     : '';
   const legend = (cls, label, value, share) => `<div class="legend-item"><span><i class="swatch ${cls}"></i>${esc(label)}</span><strong>${esc(money(value))}</strong><small>${share}</small></div>`;
   return `
     <section class="card hero">
-      <header class="card-head"><h2>${person ? `Sobra de ${esc(person.name)}` : 'Sobra prevista do mês'}</h2>${toggle}</header>
+      <header class="card-head"><h2>${person ? `Sobra prevista de ${esc(person.name)}` : 'Sobra prevista do mês'}</h2>${toggle}</header>
       <div class="hero-figure">${bigMoney(lo.left, lo.left < 0 ? 'neg' : '')}<p class="${lo.left < 0 ? 'neg' : 'muted'}">${esc(note)}</p>${dailyLine}</div>
       <div class="stack" role="img" aria-label="Divisão da renda entre contas da casa, gastos pessoais e sobra">
         ${seg(lo.house, 'house')}${seg(lo.personal, 'personal')}${seg(Math.max(0, lo.left), 'left')}
@@ -182,6 +203,7 @@ export function render(ctx) {
   const look = lookups(ctx.state);
   look.shares = ctx.state.people.length > 1 ? splitShares(ctx.state, items) : null;
   return `
+    ${balances(ctx)}
     ${hero(ctx, items)}
     <div class="grid">
       ${pending(ctx, items, look)}
@@ -194,9 +216,12 @@ export function render(ctx) {
 }
 
 export const actions = {
+  'new-account': () => openAccountForm(),
+  account: (ctx, el) => openAccountForm(ctx.state.accounts.find((a) => a.id === el.dataset.id)),
   pay: (ctx, el) => { const item = findItem(ctx.state, el); if (item) payItem(ctx, item); },
   item: (ctx, el) => { const item = findItem(ctx.state, el); if (item) openItem(ctx, item); },
   view: (ctx, el) => ctx.setViewPerson(el.dataset.person || null),
   due: (ctx, el) => { dueFilter = el.dataset.date; ctx.rerender(); },
   receive: (ctx, el) => { const entry = ctx.state.entries.find((e) => e.id === el.dataset.id); if (entry) receiveLoan(ctx, entry); },
 };
+

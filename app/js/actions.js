@@ -3,10 +3,10 @@
 
 import { isLegacy } from './migrate.js';
 import {
-  ACCOUNT_TYPES, GROUPS, debtBalance, goalSaved, installmentStatus, isCard, isMoneyAccount,
+  ACCOUNT_TYPES, GROUPS, cardInvoice, debtBalance, goalSaved, installmentStatus, isCard, isMoneyAccount,
   loanStatus, monthItems, usageCount,
 } from './model.js';
-import { decodeOfx, parseOfx, splitNewOfx } from './ofx.js';
+import { decodeOfx, invoiceImportChange, invoiceImportTargets, parseOfx, splitNewOfx, withoutInvoicePayment } from './ofx.js';
 import { getState, replaceAll, undo, update } from './store.js';
 import { confirmDialog, openDialog, openForm, toast } from './ui.js';
 import { addMonths, byId, esc, fmtDate, fmtMonth, money, norm, round2, today, uid, ymOf } from './util.js';
@@ -541,6 +541,10 @@ export function payInvoice(ctx, card, invoice) {
     values: { date: ctx.today, fromAccountId: defaultMoneyAccount(state) },
     submitLabel: 'Confirmar pagamento',
     onSubmit(v) {
+      const current = getState();
+      const fresh = cardInvoice(current, card, invoice.month);
+      if (fresh.paid || fresh.total !== invoice.total || !(fresh.total > 0)) return 'A fatura mudou ou já foi paga. Reabra a fatura antes de confirmar.';
+      if (!isMoneyAccount(current.accounts.find((a) => a.id === v.fromAccountId))) return 'Escolha a conta bancária ou dinheiro de onde saiu o pagamento.';
       update((s) => {
         s.invoicePayments.push({ id: uid(), cardId: card.id, month: invoice.month, amount: invoice.total, date: v.date, fromAccountId: v.fromAccountId });
       });
@@ -552,8 +556,8 @@ export function payInvoice(ctx, card, invoice) {
 export async function undoInvoicePayment(card, invoice) {
   const ok = await confirmDialog({ title: 'Desfazer pagamento da fatura?', message: `A fatura de ${fmtMonth(invoice.month)} do ${card.name} volta a ficar em aberto.`, confirmLabel: 'Desfazer pagamento' });
   if (!ok) return;
-  update((s) => { s.invoicePayments = s.invoicePayments.filter((p) => p.id !== invoice.payment.id); });
-  toast('Pagamento da fatura desfeito.');
+  update((s) => { Object.assign(s, withoutInvoicePayment(s, invoice.payment.id)); });
+  toast(invoice.payment.ofxRow ? 'Pagamento desfeito. A transação do extrato voltou para revisão.' : 'Pagamento da fatura desfeito.', undoAction);
 }
 
 // --------------------------------------------------------- divisão da casa
@@ -624,7 +628,8 @@ export function openAccountForm(account = null, newType = 'bank') {
     fields: [
       { name: 'name', label: 'Nome', required: true, full: true, placeholder: 'Ex.: Inter, Nubank, Carteira' },
       { name: 'type', label: 'Tipo', type: 'select', options: Object.entries(ACCOUNT_TYPES).map(([value, label]) => ({ value, label })) },
-      { name: 'opening', label: 'Saldo inicial', type: 'money', showIf: (v) => v.type === 'bank' || v.type === 'cash', hint: 'Quanto havia na conta quando você começou a usar o app.' },
+      { name: 'opening', label: 'Saldo inicial', type: 'money', allowNegative: true, showIf: (v) => v.type === 'bank' || v.type === 'cash', hint: 'Valor antes das movimentações da data inicial. Pode ser negativo.' },
+      { name: 'openingDate', label: 'Data inicial do saldo (opcional)', type: 'date', showIf: (v) => v.type === 'bank' || v.type === 'cash', hint: 'Saldo no início deste dia. Movimentações anteriores ficam no histórico, mas não entram no saldo. Sem data, soma todo o histórico.' },
       { name: 'closingDay', label: 'Dia do fechamento', type: 'number', min: 1, max: 31, showIf: cardOnly },
       { name: 'dueDay', label: 'Dia do vencimento', type: 'number', min: 1, max: 31, showIf: cardOnly },
       { name: 'limit', label: 'Limite', type: 'money', showIf: cardOnly },
@@ -633,7 +638,8 @@ export function openAccountForm(account = null, newType = 'bank') {
     onSubmit(v) {
       if (state.accounts.some((a) => a.id !== account?.id && norm(a.name) === norm(v.name))) return 'Já existe uma conta com esse nome.';
       if (v.type === 'card' && (!v.closingDay || !v.dueDay)) return 'Informe o fechamento e o vencimento do cartão.';
-      const data = { name: v.name, type: v.type, opening: v.opening || 0, closingDay: v.closingDay || null, dueDay: v.dueDay || null, limit: v.limit || 0 };
+      if (isMoneyAccount(v) && v.openingDate && (!/^\d{4}-\d{2}-\d{2}$/.test(v.openingDate) || today(new Date(`${v.openingDate}T12:00:00`)) !== v.openingDate || v.openingDate > today())) return 'Informe uma data inicial válida, até hoje.';
+      const data = { name: v.name, type: v.type, opening: v.opening || 0, openingDate: isMoneyAccount(v) ? v.openingDate || null : null, closingDay: v.closingDay || null, dueDay: v.dueDay || null, limit: v.limit || 0 };
       update((s) => {
         if (account) Object.assign(s.accounts.find((a) => a.id === account.id), data);
         else s.accounts.push({ id: uid(), archived: false, ...data });
@@ -732,6 +738,7 @@ export function reviewOfx(ctx, row) {
   const month = ymOf(row.date);
   // Previsões e contas em aberto do mesmo mês que esta transação pode estar quitando.
   const candidates = monthItems(state, month).filter((i) => !i.paid && !i.onCard && i.type === row.type);
+  const invoices = invoiceImportTargets(state, row);
   const guess = candidates.find((i) => Math.abs(i.amount - row.amount) < 0.005) || null;
   const firstCategory = (kind) => state.categories.find((c) => c.kind === kind && !c.archived)?.id;
   const base = {
@@ -741,11 +748,11 @@ export function reviewOfx(ctx, row) {
   };
   const values = { ...movementValues(base), link: guess?.key || '' };
   const fields = movementFields(state, values).filter((f) => f.name !== 'paid');
-  if (candidates.length) {
+  if (candidates.length || invoices.length) {
     fields.push({
-      name: 'link', label: 'Isto quita uma conta prevista?', type: 'select', full: true,
-      options: [{ value: '', label: 'Não, é um lançamento novo' }, ...candidates.map((i) => ({ value: i.key, label: `${i.description} — ${money(i.amount)}` }))],
-      hint: 'Vinculando, a previsão sai do mês e não é contada duas vezes.',
+      name: 'link', label: 'Vincular a uma conta ou fatura?', type: 'select', full: true,
+      options: [{ value: '', label: 'Não, é um lançamento novo' }, ...candidates.map((i) => ({ value: i.key, label: `${i.description} - ${money(i.amount)}` })), ...invoices.map((i) => ({ value: i.key, label: `Fatura ${state.accounts.find((a) => a.id === i.cardId)?.name || 'Cartão'} · ${fmtMonth(i.month)} · ${money(i.amount)}${i.payment ? ' (pagamento já registrado)' : ''}` }))],
+      hint: 'Para pagamento de cartão, escolha a fatura: vincula o extrato sem criar outra despesa ou descontar duas vezes. Faturas nunca são selecionadas automaticamente.',
     });
   }
   openForm({
@@ -755,8 +762,19 @@ export function reviewOfx(ctx, row) {
     values,
     submitLabel: 'Confirmar lançamento',
     onSubmit(v) {
+      const current = getState();
+      if (!current.ofxPending.some((pending) => pending.id === row.id) || splitNewOfx({ ...current, ofxPending: [] }, [row]).duplicates) return 'Esta transação já foi revisada. Reabra a fila do extrato.';
       const data = readMovement(v);
+      if (invoices.some((invoice) => invoice.key === v.link)) {
+        let change;
+        try { change = invoiceImportChange(getState(), row, data, v.link, uid()); }
+        catch (error) { return error.message; }
+        update((s) => { Object.assign(s, change); });
+        toast('Extrato vinculado à fatura, sem duplicar a saída.', undoAction);
+        return;
+      }
       const linked = candidates.find((i) => i.key === v.link);
+      if (v.link && (!linked || !monthItems(current, month).some((i) => i.key === v.link && !i.paid && !i.onCard))) return 'A conta vinculada mudou. Reabra a revisão antes de confirmar.';
       update((s) => {
         s.ofxPending = s.ofxPending.filter((x) => x.id !== row.id);
         if (linked?.kind === 'entry') {
@@ -817,3 +835,4 @@ export async function importBackup(file) {
   replaceAll(data);
   toast('Backup restaurado.', hasData ? undoAction : undefined);
 }
+

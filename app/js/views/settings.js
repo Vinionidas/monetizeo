@@ -116,4 +116,3 @@ export const actions = {
   export: () => exportBackup(),
   logout: () => signOut().then(() => location.reload()),
 };
-

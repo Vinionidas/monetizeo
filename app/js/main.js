@@ -176,7 +176,7 @@ function welcome() {
     const colors = ['#2f6fed', '#d6457b'];
     update((s) => {
       s.people = names.map((name, i) => ({ id: uid() + i, name, color: colors[i] }));
-      s.accounts = [{ id: uid() + 'a', name: 'Conta corrente', type: 'bank', opening: 0, archived: false }, { id: uid() + 'b', name: 'Carteira', type: 'cash', opening: 0, archived: false }];
+      s.accounts = [{ id: uid() + 'a', name: 'Conta corrente', type: 'bank', opening: 0, balanceSetup: true, archived: false }, { id: uid() + 'b', name: 'Carteira', type: 'cash', opening: 0, balanceSetup: true, archived: false }];
       s.categories = DEFAULT_CATEGORIES.map(([name, kind, group], i) => ({ id: uid() + i, name, kind, group, budget: 0, estimate: 0, archived: false }));
     });
     ui.me = getState().people[0].id;

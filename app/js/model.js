@@ -379,6 +379,21 @@ export function cardCommitted(state, card, currentYm, horizon = 36) {
 
 // ----------------------------------------------------------------- saldos
 
+/** Contas de dinheiro cujo saldo ainda não foi informado (planilha importada, backups antigos). */
+export function accountsNeedingBalance(state) {
+  return state.accounts.filter((a) => isMoneyAccount(a) && !a.archived && !a.balanceSetup);
+}
+
+/**
+ * Saldo inicial que faz o saldo de hoje bater com o valor informado pelo usuário,
+ * sem mexer no histórico: o que já foi lançado continua somado por cima dele.
+ */
+export function openingForBalance(state, account, balance, todayDate) {
+  const futureStart = !!account.openingDate && account.openingDate > todayDate;
+  const probe = { ...account, opening: 0, openingDate: futureStart ? null : account.openingDate || null };
+  return { opening: round2(balance - accountBalance(state, probe, todayDate)), openingDate: probe.openingDate };
+}
+
 /** Saldo pago/recebido até asOf (opcional). openingDate é o início do dia; sem ela, mantém todo o histórico dos backups antigos. */
 export function accountBalance(state, account, asOf = null) {
   if (asOf && account.openingDate && account.openingDate > asOf) return null;
@@ -458,4 +473,3 @@ export function usageCount(state, field, id) {
   const lists = [state.entries, state.recurring, state.installments, state.ofxPending];
   return lists.reduce((n, list) => n + list.filter((x) => x[field] === id).length, 0);
 }
-

@@ -1,18 +1,25 @@
 // Visão geral: quanto sobra no mês, o que vence, a divisão da casa, cartões,
 // orçamento e os próximos meses.
 
-import { openAccountForm, openItem, payItem, receiveLoan } from '../actions.js';
-import { accountBalance, cardInvoice, dailyAllowance, expensesByCategory, houseSplit, isCard, isMoneyAccount, isOverdue, leftover, monthItems, openLoans, projection, splitShares } from '../model.js';
+import { exportBackup, openAccountForm, openBalanceSetup, openItem, payItem, receiveLoan } from '../actions.js';
+import { accountBalance, accountsNeedingBalance, cardInvoice, dailyAllowance, expensesByCategory, houseSplit, isCard, isMoneyAccount, isOverdue, leftover, monthItems, openLoans, projection, splitShares } from '../model.js';
 import { bar } from '../ui.js';
-import { byId, esc, fmtDate, fmtDay, fmtMonth, fmtMonthShort, money, percent, sum } from '../util.js';
+import { byId, diffDays, esc, fmtDate, fmtDay, fmtMonth, fmtMonthShort, money, percent, sum } from '../util.js';
+import { getMode } from '../store.js';
+import { bigMoney, empty, findItem, itemRow, lookups, personDot, sectionHead } from './shared.js';
 
 // Dia de vencimento escolhido em "Contas a pagar" ('' = todas).
 let dueFilter = '';
-import { bigMoney, empty, findItem, itemRow, lookups, personDot, sectionHead } from './shared.js';
 
 function balances(ctx) {
   const accounts = ctx.state.accounts.filter(isMoneyAccount);
   if (!accounts.length) return `<section class="card">${sectionHead('Saldo calculado das contas')}${empty('Cadastre sua conta', 'Informe o saldo inicial para acompanhar o que entrou e saiu, sem conectar ao banco.', '<button type="button" class="btn primary" data-action="new-account">Cadastrar conta</button>')}</section>`;
+  const unset = accountsNeedingBalance(ctx.state);
+  if (unset.length) {
+    return `<section class="card balance-card">${sectionHead('Saldo das contas')}
+      <p class="notice">Informe quanto tem hoje em cada conta para ver o saldo real. Sem isso, o total não bate com o banco.</p>
+      <div class="button-row">${unset.map((a) => `<button type="button" class="btn small primary" data-action="balance" data-id="${esc(a.id)}">Informar saldo de ${esc(a.name)}</button>`).join('')}</div></section>`;
+  }
   const rows = accounts.map((account) => ({ account, balance: accountBalance(ctx.state, account, ctx.today) }));
   const total = sum(rows, (row) => row.balance);
   const partial = rows.some((row) => row.balance === null);
@@ -29,6 +36,23 @@ function balances(ctx) {
     </details>
     <a class="more-link" href="#/ajustes">Gerenciar contas e saldos iniciais</a>
   </section>`;
+}
+
+/** Lembrete de backup: os dados na nuvem não protegem de perder o projeto. Só no modo nuvem. */
+function backupNotice(ctx) {
+  if (getMode() !== 'cloud') return '';
+  let last = null;
+  let snooze = null;
+  try {
+    last = localStorage.getItem('monetizeo:lastBackup');
+    snooze = localStorage.getItem('monetizeo:backupSnooze');
+  } catch { /* sem armazenamento */ }
+  const days = last ? diffDays(last, ctx.today) : null;
+  if (days !== null && days < 30) return '';
+  if (snooze && diffDays(snooze, ctx.today) < 7) return '';
+  const what = days === null ? 'Você ainda não baixou um backup neste aparelho.' : `Faz ${days} dias que você não baixa um backup.`;
+  return `<section class="notice action"><span>${esc(what)} Os dados ficam na nuvem, mas uma cópia no seu aparelho é a única proteção se o projeto for perdido.</span>
+    <span class="button-row"><button type="button" class="btn small" data-action="snooze-backup">Depois</button><button type="button" class="btn small primary" data-action="backup">Baixar agora</button></span></section>`;
 }
 
 function hero(ctx, items) {
@@ -203,6 +227,7 @@ export function render(ctx) {
   const look = lookups(ctx.state);
   look.shares = ctx.state.people.length > 1 ? splitShares(ctx.state, items) : null;
   return `
+    ${backupNotice(ctx)}
     ${balances(ctx)}
     ${hero(ctx, items)}
     <div class="grid">
@@ -217,6 +242,9 @@ export function render(ctx) {
 
 export const actions = {
   'new-account': () => openAccountForm(),
+  balance: (ctx, el) => { const account = ctx.state.accounts.find((a) => a.id === el.dataset.id); if (account) openBalanceSetup(ctx, account); },
+  backup: (ctx) => { exportBackup(); ctx.rerender(); },
+  'snooze-backup': (ctx) => { try { localStorage.setItem('monetizeo:backupSnooze', ctx.today); } catch { /* ok */ } ctx.rerender(); },
   account: (ctx, el) => openAccountForm(ctx.state.accounts.find((a) => a.id === el.dataset.id)),
   pay: (ctx, el) => { const item = findItem(ctx.state, el); if (item) payItem(ctx, item); },
   item: (ctx, el) => { const item = findItem(ctx.state, el); if (item) openItem(ctx, item); },
@@ -224,4 +252,3 @@ export const actions = {
   due: (ctx, el) => { dueFilter = el.dataset.date; ctx.rerender(); },
   receive: (ctx, el) => { const entry = ctx.state.entries.find((e) => e.id === el.dataset.id); if (entry) receiveLoan(ctx, entry); },
 };
-

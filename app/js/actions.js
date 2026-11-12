@@ -3,7 +3,7 @@
 
 import { isLegacy } from './migrate.js';
 import {
-  ACCOUNT_TYPES, GROUPS, cardInvoice, debtBalance, goalSaved, installmentStatus, isCard, isMoneyAccount,
+  ACCOUNT_TYPES, GROUPS, cardInvoice, debtBalance, openingForBalance, goalSaved, installmentStatus, isCard, isMoneyAccount,
   loanStatus, monthItems, usageCount,
 } from './model.js';
 import { decodeOfx, invoiceImportChange, invoiceImportTargets, parseOfx, splitNewOfx, withoutInvoicePayment } from './ofx.js';
@@ -620,6 +620,24 @@ export function openPersonForm(person) {
   });
 }
 
+/** Pergunta só "quanto tem agora?" e ajusta o saldo inicial por baixo, sem pedir data nem conta de cabeça. */
+export function openBalanceSetup(ctx, account) {
+  openForm({
+    title: `Quanto tem em ${account.name} agora?`,
+    intro: 'Informe o saldo que aparece hoje no banco (ou o dinheiro que você tem na mão). A partir daqui o Monetizeo soma tudo o que for pago ou recebido.',
+    fields: [{ name: 'balance', label: 'Saldo atual', type: 'money', required: true, allowNegative: true, allowZero: true }],
+    submitLabel: 'Salvar saldo',
+    onSubmit(v) {
+      const current = getState();
+      const target = current.accounts.find((a) => a.id === account.id);
+      if (!target) return 'Esta conta não existe mais.';
+      const { opening, openingDate } = openingForBalance(current, target, v.balance, today());
+      update((s) => Object.assign(s.accounts.find((a) => a.id === account.id), { opening, openingDate, balanceSetup: true }));
+      toast('Saldo salvo.', undoAction);
+    },
+  });
+}
+
 export function openAccountForm(account = null, newType = 'bank') {
   const state = getState();
   const cardOnly = (v) => v.type === 'card';
@@ -640,6 +658,8 @@ export function openAccountForm(account = null, newType = 'bank') {
       if (v.type === 'card' && (!v.closingDay || !v.dueDay)) return 'Informe o fechamento e o vencimento do cartão.';
       if (isMoneyAccount(v) && v.openingDate && (!/^\d{4}-\d{2}-\d{2}$/.test(v.openingDate) || today(new Date(`${v.openingDate}T12:00:00`)) !== v.openingDate || v.openingDate > today())) return 'Informe uma data inicial válida, até hoje.';
       const data = { name: v.name, type: v.type, opening: v.opening || 0, openingDate: isMoneyAccount(v) ? v.openingDate || null : null, closingDay: v.closingDay || null, dueDay: v.dueDay || null, limit: v.limit || 0 };
+      // Só conta como "saldo informado" se a pessoa realmente mexeu no saldo ou na data (ou é conta nova).
+      if (!account || Number(v.opening || 0) !== Number(account.opening || 0) || (v.openingDate || null) !== (account.openingDate || null)) data.balanceSetup = true;
       update((s) => {
         if (account) Object.assign(s.accounts.find((a) => a.id === account.id), data);
         else s.accounts.push({ id: uid(), archived: false, ...data });
@@ -809,6 +829,7 @@ export function exportBackup() {
   link.href = URL.createObjectURL(blob);
   link.download = `monetizeo-backup-${today()}.json`;
   link.click();
+  try { localStorage.setItem('monetizeo:lastBackup', today()); } catch { /* sem armazenamento: só não lembra a data */ }
   setTimeout(() => URL.revokeObjectURL(link.href), 1000);
 }
 
@@ -835,4 +856,3 @@ export async function importBackup(file) {
   replaceAll(data);
   toast('Backup restaurado.', hasData ? undoAction : undefined);
 }
-

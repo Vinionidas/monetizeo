@@ -2,6 +2,20 @@
 
 Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/).
 
+## [0.5.0] - 2026-11-11
+
+### Adicionado
+- Saldo calculado por conta e consolidado na visão geral, com data inicial opcional (início do dia) e saldo
+  inicial negativo.
+- Vínculo explícito do extrato OFX com a fatura do cartão, sem debitar duas vezes; desfazer devolve a
+  transação à fila.
+- Pedido de saldo: contas vindas da planilha ou de backups antigos perguntam "quanto tem agora?" em vez de
+  mostrar um saldo que não bate com o banco.
+- Lembrete de backup no modo nuvem (a cada 30 dias), com opção de adiar.
+
+### Alterado
+- O texto do "gasto por dia" agora diz que a sobra inclui receitas ainda previstas.
+
 ## [0.4.0] - 2026-11-11
 
 ### Adicionado

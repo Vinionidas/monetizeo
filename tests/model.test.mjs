@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { isLegacy, migrateLegacy } from '../app/js/migrate.js';
 import {
-  accountBalance, cardCommitted, cardInvoice, dailyAllowance, debtBalance, emptyState, goalPlan, houseSplit, installmentStatus,
+  accountBalance, accountsNeedingBalance, openingForBalance, cardCommitted, cardInvoice, dailyAllowance, debtBalance, emptyState, goalPlan, houseSplit, installmentStatus,
   invoiceMonthFor, isOverdue, leftover, loanStatus, monthItems, openLoans, projection, recurringConfig, summarize,
 } from '../app/js/model.js';
 import { decodeOfx, invoiceImportChange, invoiceImportTargets, parseOfx, splitNewOfx, withoutInvoicePayment } from '../app/js/ofx.js';
@@ -376,3 +376,29 @@ test('gasto por dia: divide a sobra pelos dias que faltam, só no mês atual', (
   assert.equal(dailyAllowance(-50, '2026-11-11', '2026-11'), null); // sem sobra
 });
 
+
+test('saldo inicial: contas importadas pedem o saldo; informar o saldo de hoje faz o total bater', () => {
+  const s = fixture();
+  s.entries.push(
+    { id: 'a', date: '2026-03-05', description: 'Salário', amount: 1000, type: 'income', accountId: 'banco', paid: true },
+    { id: 'b', date: '2026-03-06', description: 'Conta', amount: 200, type: 'expense', accountId: 'banco', paid: true },
+    { id: 'c', date: '2026-04-01', description: 'Futuro', amount: 50, type: 'expense', accountId: 'banco', paid: true },
+  );
+  // contas vindas de planilha ou backup antigo não têm balanceSetup
+  assert.deepEqual(accountsNeedingBalance(s).map((a) => a.id), ['banco']);
+  s.accounts[0].balanceSetup = true;
+  assert.deepEqual(accountsNeedingBalance(s), []);
+
+  // o banco mostra 2.500 hoje (10/03): o saldo calculado passa a ser exatamente esse
+  const { opening, openingDate } = openingForBalance(s, s.accounts[0], 2500, '2026-03-10');
+  assert.equal(opening, 1700); // 2500 − (1000 − 200); o lançamento futuro não entra
+  Object.assign(s.accounts[0], { opening, openingDate });
+  assert.equal(accountBalance(s, s.accounts[0], '2026-03-10'), 2500);
+  // e o que for pago depois continua somando por cima
+  assert.equal(accountBalance(s, s.accounts[0], '2026-04-01'), 2450);
+  // saldo negativo também vale (cheque especial)
+  assert.equal(openingForBalance(s, s.accounts[0], -100, '2026-03-10').opening, -900);
+  // contas arquivadas e cartões não são cobrados
+  s.accounts.push({ id: 'velha', type: 'bank', archived: true }, { id: 'cart', type: 'card' });
+  assert.deepEqual(accountsNeedingBalance(s), []);
+});

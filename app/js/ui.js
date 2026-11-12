@@ -209,4 +209,3 @@ export function bar(fraction, { tone = '' } = {}) {
   const pct = Math.max(0, Math.min(1, fraction || 0)) * 100;
   return `<div class="bar ${tone}"><i style="width:${pct.toFixed(1)}%"></i></div>`;
 }
-

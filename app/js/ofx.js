@@ -118,4 +118,3 @@ export function withoutInvoicePayment(state, paymentId) {
   if (payment?.ofxRow && !splitNewOfx({ ...state, invoicePayments }, [payment.ofxRow]).duplicates) ofxPending = [...ofxPending, payment.ofxRow];
   return { invoicePayments, ofxPending };
 }
-

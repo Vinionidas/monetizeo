@@ -402,3 +402,10 @@ test('saldo inicial: contas importadas pedem o saldo; informar o saldo de hoje f
   s.accounts.push({ id: 'velha', type: 'bank', archived: true }, { id: 'cart', type: 'card' });
   assert.deepEqual(accountsNeedingBalance(s), []);
 });
+
+test('transferência marcada à mão fica fora da sobra e do gasto', () => {
+  const s = fixture();
+  s.entries.push({ id: 't1', date: '2026-03-12', description: 'Devolução', amount: 300, type: 'expense', categoryId: 'lazer', accountId: 'banco', personId: 'ana', scope: 'personal', paid: true, transfer: true });
+  assert.equal(summarize(monthItems(s, '2026-03')).expense, 1550);
+  assert.equal(accountBalance(s, s.accounts[0]), -200);
+});

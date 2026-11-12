@@ -2,6 +2,11 @@
 
 Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/).
 
+## [0.7.1] - 2026-11-11
+
+### Adicionado
+- Lançamentos podem ser marcados como transferência (empréstimo que entrou ou saiu, acerto), ficando fora de gastos e da sobra.
+
 ## [0.7.0] - 2026-11-11
 
 ### Adicionado

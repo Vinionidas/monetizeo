@@ -52,7 +52,8 @@ export function normalize(state) {
  * Empréstimo a alguém e a devolução dele são dinheiro que sai e volta: mexem no
  * saldo da conta, mas não são gasto nem renda, então ficam fora das somas do mês.
  */
-export const isTransfer = (entry) => !!entry.loan || entry.source?.kind === 'loan';
+// `transfer: true` marca dinheiro que só passou pela conta (empréstimo recebido ou devolvido, acerto entre o casal).
+export const isTransfer = (entry) => !!entry.loan || entry.transfer === true || entry.source?.kind === 'loan';
 
 export const isMoneyAccount = (account) => !!account && (account.type === 'bank' || account.type === 'cash');
 export const isCard = (account) => !!account && account.type === 'card';

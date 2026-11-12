@@ -14,9 +14,13 @@ export function personDot(person, title) {
 }
 
 /** Número grande com os centavos menores, como em "R$ 5.304,28". */
-export function bigMoney(value, className = '') {
+export function bigMoneyInner(value) {
   const { sign, whole, cents } = moneyParts(value);
-  return `<span class="big ${className}"><small>R$</small>${sign}${esc(whole)}<small>,${esc(cents)}</small></span>`;
+  return `<small>R$</small>${sign}${esc(whole)}<small>,${esc(cents)}</small>`;
+}
+
+export function bigMoney(value, className = '') {
+  return `<span class="big ${className}" data-count="${Number(value) || 0}">${bigMoneyInner(value)}</span>`;
 }
 
 export function dueLabel(item, today) {

@@ -13,6 +13,7 @@ import * as house from './views/house.js';
 import * as overview from './views/overview.js';
 import * as plan from './views/plan.js';
 import * as settings from './views/settings.js';
+import { bigMoneyInner } from './views/shared.js';
 
 const ROUTES = {
   inicio: { title: 'Visão geral', icon: 'home', view: overview, short: 'Início' },
@@ -51,7 +52,7 @@ function context() {
     viewPerson: ui.viewPerson,
     theme: ui.theme,
     navigate: (name) => { location.hash = `#/${name}`; },
-    rerender: renderView,
+    rerender: () => renderView(),
     setViewPerson: (id) => { ui.viewPerson = id; renderView(); },
     setMe: (id) => { ui.me = id; localStorage.setItem('monetizeo:me', id); renderView(); renderShellState(); },
     setTheme: (value) => { ui.theme = value; localStorage.setItem('monetizeo:theme', value); applyTheme(); renderView(); },
@@ -116,7 +117,25 @@ function moreView() {
   return `<section class="card"><div class="lines">${['plano', 'metas', 'ajustes'].map(link).join('')}</div></section>`;
 }
 
-function renderView() {
+/** Números grandes sobem do zero ao entrar na tela (não a cada alteração de dados). */
+function countUp(view) {
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const ease = (t) => 1 - (1 - t) ** 3;
+  const started = performance.now();
+  const targets = [...view.querySelectorAll('.big[data-count]')].map((el) => [el, Number(el.dataset.count)]).filter(([, value]) => value);
+  if (!targets.length) return;
+  const frame = (now) => {
+    const t = Math.min(1, (now - started) / 600);
+    for (const [el, value] of targets) {
+      if (el.isConnected) el.innerHTML = bigMoneyInner(t === 1 ? value : value * ease(t));
+    }
+    if (t < 1) requestAnimationFrame(frame);
+  };
+  requestAnimationFrame(frame);
+}
+
+/** `enter` = a pessoa chegou na tela ou trocou de mês: só aí as animações de entrada tocam. */
+function renderView(enter = false) {
   if (!root.querySelector('#view')) return;
   const raw = location.hash.replace(/^#\/?/, '');
   const name = routeName();
@@ -136,8 +155,10 @@ function renderView() {
   });
   document.title = `${isMore ? 'Mais' : route.title} · Monetizeo`;
 
+  view.classList.toggle('enter', enter === true);
   view.innerHTML = isMore ? moreView() : route.view.render(ctx);
   if (!isMore) route.view.mount?.(view, ctx);
+  if (enter === true) countUp(view);
 }
 
 // ----------------------------------------------------------- primeiro acesso
@@ -279,10 +300,10 @@ async function boot() {
 // ------------------------------------------------------------------ eventos
 
 const globalActions = {
-  'prev-month': () => { ui.ym = addMonths(ui.ym, -1); renderView(); },
-  'next-month': () => { ui.ym = addMonths(ui.ym, 1); renderView(); },
-  'today-month': () => { ui.ym = ymOf(today()); renderView(); },
-  month: (ctx, el) => { ui.ym = el.dataset.ym; renderView(); },
+  'prev-month': () => { ui.ym = addMonths(ui.ym, -1); renderView(true); },
+  'next-month': () => { ui.ym = addMonths(ui.ym, 1); renderView(true); },
+  'today-month': () => { ui.ym = ymOf(today()); renderView(true); },
+  month: (ctx, el) => { ui.ym = el.dataset.ym; renderView(true); },
   add: (ctx) => openEntryForm(ctx),
 };
 
@@ -297,7 +318,7 @@ root.addEventListener('click', (event) => {
 });
 
 window.addEventListener('hashchange', () => {
-  renderView();
+  renderView(true);
   window.scrollTo(0, 0);
 });
 
@@ -306,7 +327,7 @@ function start() {
   if (!state.people.some((p) => p.id === ui.me)) ui.me = null;
   shell();
   renderShellState();
-  renderView();
+  renderView(true);
   const recovered = takeNotice();
   if (recovered) toast(recovered);
   if (!ui.me && state.people.length > 1) {

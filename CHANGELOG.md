@@ -2,6 +2,14 @@
 
 Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/).
 
+## [0.7.0] - 2026-11-11
+
+### Adicionado
+- Rosca de gastos por categoria na visão geral, com o total do mês no centro e o percentual de cada categoria.
+  A paleta foi validada para daltonismo nos temas claro e escuro.
+- Animações discretas ao entrar numa tela ou trocar de mês: números sobem, barras e a rosca se preenchem.
+  Não tocam a cada alteração de dados e respeitam a preferência de movimento reduzido do aparelho.
+
 ## [0.6.0] - 2026-11-11
 
 ### Adicionado

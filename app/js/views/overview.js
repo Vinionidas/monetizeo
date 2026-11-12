@@ -179,22 +179,53 @@ function cards(ctx) {
   return `<section class="card">${sectionHead('Faturas de ' + fmtMonth(ctx.ym).split(' ')[0])}<div class="lines">${rows}</div></section>`;
 }
 
+const DONUT_SLICES = 6; // cores validadas para 6 categorias; o resto vira "Outras"
+const DONUT_GAP = 0.8; // respiro entre as fatias, em % da volta
+
+/** Rosca dos gastos do mês: as maiores categorias, com o total no centro. */
+function donut(slices, total) {
+  let offset = 0;
+  const arcs = slices.map((slice) => {
+    const share = (slice.total / total) * 100;
+    const length = Math.max(share - DONUT_GAP, 0.4);
+    const arc = `<circle class="seg" cx="60" cy="60" r="48" pathLength="100" style="stroke:${slice.color};stroke-dasharray:${length.toFixed(2)} ${(100 - length).toFixed(2)};stroke-dashoffset:${(-offset).toFixed(2)}"><title>${esc(slice.name)}: ${esc(money(slice.total))} (${percent(slice.total / total)})</title></circle>`;
+    offset += share;
+    return arc;
+  }).join('');
+  const label = `Gastos por categoria: ${slices.map((x) => `${x.name} ${percent(x.total / total)}`).join(', ')}`;
+  return `
+    <div class="donut">
+      <svg viewBox="0 0 120 120" role="img" aria-label="${esc(label)}"><g transform="rotate(-90 60 60)">${arcs}</g></svg>
+      <div class="donut-center"><small>Gasto no mês</small><strong>${esc(money(total))}</strong></div>
+    </div>`;
+}
+
 function budget(ctx, items) {
   const totals = expensesByCategory(ctx.state, items);
   if (!totals.length) return `<section class="card">${sectionHead('Gastos por categoria')}${empty('Nada por aqui', 'Ainda não há despesas neste mês.')}</section>`;
-  const max = Math.max(...totals.map((t) => t.total));
-  const rows = totals.map(({ category, total }) => {
+  const total = sum(totals, (t) => t.total);
+
+  // A cor acompanha a ordem do cadastro, não a posição no ranking do mês.
+  const order = new Map(ctx.state.categories.map((c, i) => [c.id, i]));
+  const top = totals.slice(0, DONUT_SLICES);
+  const slot = new Map([...top].sort((a, b) => (order.get(a.category.id) ?? 99) - (order.get(b.category.id) ?? 99)).map((t, i) => [t.category.id, i + 1]));
+  const colorOf = (id) => (slot.has(id) ? `var(--cat-${slot.get(id)})` : 'var(--cat-other)');
+  const rest = totals.slice(DONUT_SLICES);
+  const slices = top.map((t) => ({ name: t.category.name, total: t.total, color: colorOf(t.category.id) }));
+  if (rest.length) slices.push({ name: `Outras (${rest.length})`, total: sum(rest, (t) => t.total), color: 'var(--cat-other)' });
+
+  const rows = totals.map(({ category, total: spent }) => {
     const hasBudget = category.budget > 0;
-    const over = hasBudget && total > category.budget;
-    const detail = hasBudget ? (over ? `passou ${money(total - category.budget)} do limite` : `de ${money(category.budget)}`) : '';
+    const over = hasBudget && spent > category.budget;
+    const detail = hasBudget ? (over ? `passou ${money(spent - category.budget)} do limite` : `de ${money(category.budget)}`) : '';
     return `
       <div class="budget-row">
-        <span class="budget-name">${esc(category.name)}</span>
-        <span class="budget-value"><strong class="${over ? 'neg' : ''}">${esc(money(total))}</strong> <small class="${over ? 'neg' : 'muted'}">${esc(detail)}</small></span>
-        ${bar(hasBudget ? total / category.budget : total / max, { tone: over ? 'over' : hasBudget ? '' : 'plain' })}
+        <span class="budget-name"><i class="swatch" style="background:${colorOf(category.id)}"></i>${esc(category.name)} <small class="muted">${percent(spent / total)}</small></span>
+        <span class="budget-value"><strong class="${over ? 'neg' : ''}">${esc(money(spent))}</strong> <small class="${over ? 'neg' : 'muted'}">${esc(detail)}</small></span>
+        ${hasBudget ? bar(spent / category.budget, { tone: over ? 'over' : '' }) : ''}
       </div>`;
   }).join('');
-  return `<section class="card">${sectionHead('Gastos por categoria', '<a class="muted" href="#/ajustes">definir limites</a>')}<div class="budget">${rows}</div></section>`;
+  return `<section class="card">${sectionHead('Gastos por categoria', '<a class="muted" href="#/ajustes">definir limites</a>')}${total > 0 ? donut(slices, total) : ''}<div class="budget">${rows}</div></section>`;
 }
 
 function forecast(ctx) {

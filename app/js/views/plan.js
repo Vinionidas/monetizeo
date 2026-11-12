@@ -64,19 +64,19 @@ function installmentSection(ctx, look) {
 }
 
 function projectionSection(ctx) {
-  const rows = projection(ctx.state, ctx.currentYm, 24, ctx.currentYm);
+  const rows = projection(ctx.state, ctx.currentYm, 24);
   const body = rows.map((r) => `
     <tr class="${r.month === ctx.ym ? 'current' : ''}">
       <td><a href="#" data-action="month" data-ym="${r.month}">${esc(fmtMonth(r.month))}</a></td>
       <td class="num pos">${esc(money(r.income))}</td>
-      <td class="num">${esc(money(r.expense))}${r.estimated > 0 ? '<sup title="Inclui gasto variável estimado">*</sup>' : ''}</td>
+      <td class="num">${esc(money(r.expense))}</td>
       <td class="num ${r.balance < 0 ? 'neg' : ''}">${esc(money(r.balance))}</td>
       <td class="num ${r.accumulated < 0 ? 'neg' : ''}"><strong>${esc(money(r.accumulated))}</strong></td>
     </tr>`).join('');
   return `
     <section class="card wide">
       <header class="card-head"><h2>Projeção de 24 meses</h2></header>
-      <p class="muted">Soma lançamentos, recorrentes e parcelas. O acumulado parte de zero no mês atual. <span>* inclui o gasto variável estimado das categorias.</span></p>
+      <p class="muted">Soma lançamentos, recorrentes e parcelas. O acumulado parte de zero no mês atual. É a mesma conta da sobra do mês.</p>
       <div class="table-scroll"><table class="table"><thead><tr><th>Mês</th><th class="num">Entradas</th><th class="num">Saídas</th><th class="num">Sobra</th><th class="num">Acumulado</th></tr></thead><tbody>${body}</tbody></table></div>
     </section>`;
 }

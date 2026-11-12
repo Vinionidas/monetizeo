@@ -437,34 +437,40 @@ export function debtBalance(state, debt) {
 // --------------------------------------------------------------- projeção
 
 /**
- * Fluxo dos próximos meses. Em meses futuros, cada categoria com "gasto
- * variável estimado" reserva esse valor (menos o que já foi lançado avulso
- * nela), para a projeção não fingir que mercado e combustível custam zero.
+ * Fluxo dos próximos meses: só lançamentos, recorrentes e parcelas — a mesma
+ * base da sobra do mês, para os dois blocos sempre baterem. O sobre-teto das
+ * categorias é margem de tolerância, não previsão, e não entra aqui.
  */
-export function projection(state, fromYm, months, currentYm) {
+export function projection(state, fromYm, months) {
   const rows = [];
   let accumulated = 0;
   for (let i = 0; i < months; i++) {
     const ym = addMonths(fromYm, i);
-    const items = monthItems(state, ym);
-    const { income, expense } = summarize(items);
-    let estimated = 0;
-    if (ym > currentYm) {
-      for (const category of state.categories) {
-        if (!(category.estimate > 0)) continue;
-        const launched = sum(
-          items.filter((it) => it.kind === 'entry' && !it.source && it.type === 'expense' && it.categoryId === category.id),
-          (it) => it.amount,
-        );
-        estimated += Math.max(0, category.estimate - launched);
-      }
-    }
-    const out = round2(expense + estimated);
-    const balance = round2(income - out);
+    const { income, expense } = summarize(monthItems(state, ym));
+    const balance = round2(income - expense);
     accumulated = round2(accumulated + balance);
-    rows.push({ month: ym, income, expense: out, estimated: round2(estimated), balance, accumulated });
+    rows.push({ month: ym, income, expense, balance, accumulated });
   }
   return rows;
+}
+
+/**
+ * Situação do gasto de uma categoria contra o teto (limite mensal) e o
+ * sobre-teto (margem extra para urgências, campo `estimate`).
+ * - none: sem teto definido;
+ * - ok: dentro do teto;
+ * - margin: passou do teto, mas ainda dentro do sobre-teto;
+ * - red: passou do teto + sobre-teto (ou do teto, sem sobre-teto).
+ */
+export function budgetStatus(category, spent) {
+  const limit = Number(category?.budget) || 0;
+  const margin = limit > 0 ? Math.max(0, Number(category?.estimate) || 0) : 0;
+  const ceiling = round2(limit + margin);
+  if (!(limit > 0)) return { state: 'none', limit, margin, ceiling, overLimit: 0, marginUsed: 0, overCeiling: 0 };
+  const overLimit = Math.max(0, round2(spent - limit));
+  const overCeiling = Math.max(0, round2(spent - ceiling));
+  const state = overCeiling > 0 ? 'red' : overLimit > 0 ? 'margin' : 'ok';
+  return { state, limit, margin, ceiling, overLimit, marginUsed: Math.min(overLimit, margin), overCeiling };
 }
 
 // --------------------------------------------------- referências cruzadas

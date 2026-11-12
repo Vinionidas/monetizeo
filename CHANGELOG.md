@@ -2,6 +2,15 @@
 
 Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/).
 
+## [0.8.0] - 2026-11-12
+
+### Alterado
+- O "gasto variável estimado" das categorias virou **sobre-teto**: uma margem para urgências acima do teto (limite mensal).
+  Passou do teto, dentro da margem: aviso amarelo. Passou do teto + sobre-teto: alerta vermelho na visão geral
+  pedindo para reduzir ou compensar em outra categoria.
+- A projeção de 12 e 24 meses não soma mais estimativas: usa a mesma base da sobra do mês, então os dois blocos
+  passam a bater (antes dezembro aparecia com sobra positiva no resumo e negativa na projeção).
+
 ## [0.7.1] - 2026-11-11
 
 ### Adicionado

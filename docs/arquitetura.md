@@ -102,7 +102,7 @@ para visitas no Wi-Fi, não criptografia: o tráfego na rede local é HTTP.
 
 `data/state.json` é `{ "rev": número, "state": {...} }`. Campos de `state` (ver `emptyState` em `model.js`):
 
-- `people`, `accounts` (`type`: `bank`, `cash`, `card`, `credit`; `opening`, `openingDate` e `balanceSetup` para o saldo inicial), `categories` (`kind`, `group`, `budget`, `estimate`)
+- `people`, `accounts` (`type`: `bank`, `cash`, `card`, `credit`; `opening`, `openingDate` e `balanceSetup` para o saldo inicial), `categories` (`kind`, `group`, `budget` = teto mensal, `estimate` = sobre-teto: margem para urgências acima do teto, usada só nos avisos e nunca na projeção)
 - `entries` — `{ id, date, description, amount, type, categoryId, accountId, personId, scope, paid, source?, importId? }`.
   `personId: null` significa "casal"; `scope` é `house` ou `personal`; `loan: { to }` marca um empréstimo a receber
   (devoluções são lançamentos com `source: { kind: 'loan', id }`).

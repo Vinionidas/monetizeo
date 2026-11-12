@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import { isLegacy, migrateLegacy } from '../app/js/migrate.js';
 import {
   accountBalance, accountsNeedingBalance, openingForBalance, cardCommitted, cardInvoice, dailyAllowance, debtBalance, emptyState, goalPlan, houseSplit, installmentStatus,
-  invoiceMonthFor, isOverdue, leftover, loanStatus, monthItems, openLoans, projection, recurringConfig, summarize,
+  invoiceMonthFor, isOverdue, leftover, loanStatus, monthItems, openLoans, projection, budgetStatus, recurringConfig, summarize,
 } from '../app/js/model.js';
 import { decodeOfx, invoiceImportChange, invoiceImportTargets, parseOfx, splitNewOfx, withoutInvoicePayment } from '../app/js/ofx.js';
 import { addMonths, dateIn, monthDiff, parseMoney, today } from '../app/js/util.js';
@@ -264,16 +264,27 @@ test('atrasado: só despesa em aberto, fora do cartão e com data passada', () =
   assert.deepEqual(overdue, ['Moto (3/10)']); // Aluguel vence dia 31; Streaming está no cartão; salário não é despesa
 });
 
-test('projeção reserva o gasto variável estimado só nos meses futuros', () => {
+test('projeção usa a mesma base da sobra do mês: sobre-teto não entra', () => {
   const s = fixture();
-  const rows = projection(s, '2026-03', 3, '2026-03');
+  const rows = projection(s, '2026-03', 3);
   assert.equal(rows[0].expense, 1550);
-  assert.equal(rows[0].estimated, 0);
-  assert.equal(rows[1].expense, 1550 + 800);
-  assert.equal(rows[2].accumulated, 6450 + 5650 + 5650);
-  // o que já foi lançado na categoria desconta da estimativa
-  s.entries.push({ id: 'm', date: '2026-04-03', description: 'Feira', amount: 300, type: 'expense', categoryId: 'mercado', accountId: 'banco', paid: true });
-  assert.equal(projection(s, '2026-03', 2, '2026-03')[1].expense, 1550 + 300 + 500);
+  assert.equal(rows[1].expense, 1550); // Mercado tem sobre-teto de 800, mas isso não é previsão
+  assert.equal(rows[2].accumulated, 6450 * 3);
+  for (const r of rows) assert.equal(r.balance, leftover(s, r.month).left); // resumo e projeção batem
+});
+
+test('teto e sobre-teto: ok, usando a margem e no vermelho', () => {
+  const cat = { budget: 1000, estimate: 300 };
+  assert.equal(budgetStatus(cat, 900).state, 'ok');
+  const m = budgetStatus(cat, 1200);
+  assert.deepEqual([m.state, m.overLimit, m.marginUsed, m.overCeiling], ['margin', 200, 200, 0]);
+  assert.equal(budgetStatus(cat, 1300).state, 'margin'); // exatamente no sobre-teto ainda é tolerado
+  const r = budgetStatus(cat, 1450.5);
+  assert.deepEqual([r.state, r.marginUsed, r.overCeiling], ['red', 300, 150.5]);
+  // sem sobre-teto, passar do teto já é vermelho
+  assert.equal(budgetStatus({ budget: 1000, estimate: 0 }, 1001).state, 'red');
+  // sem teto, o sobre-teto é ignorado
+  assert.equal(budgetStatus({ budget: 0, estimate: 300 }, 5000).state, 'none');
 });
 
 test('metas e dívidas são calculadas pelos lançamentos', () => {

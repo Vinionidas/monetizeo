@@ -677,13 +677,13 @@ export function openCategoryForm(category = null) {
       { name: 'name', label: 'Nome', required: true, full: true },
       { name: 'kind', label: 'Tipo', type: 'segmented', options: TYPE_OPTIONS },
       { name: 'group', label: 'Grupo', type: 'select', options: Object.entries(GROUPS).map(([value, label]) => ({ value, label })), showIf: (v) => v.kind === 'expense' },
-      { name: 'budget', label: 'Limite mensal (opcional)', type: 'money', showIf: (v) => v.kind === 'expense', hint: 'Aparece no orçamento da visão geral.' },
-      { name: 'estimate', label: 'Gasto variável estimado (opcional)', type: 'money', showIf: (v) => v.kind === 'expense', hint: 'Reservado na projeção dos meses futuros (ex.: mercado).' },
+      { name: 'budget', label: 'Teto mensal (opcional)', type: 'money', showIf: (v) => v.kind === 'expense', hint: 'Quanto pretendem gastar no mês nesta categoria.' },
+      { name: 'estimate', label: 'Sobre-teto para urgências (opcional)', type: 'money', showIf: (v) => v.kind === 'expense' && v.budget > 0, hint: 'Margem além do teto. Passou do teto: aviso amarelo. Passou do teto + sobre-teto: alerta vermelho. Não entra na previsão.' },
     ],
     values: category || { kind: 'expense', group: 'need' },
     onSubmit(v) {
       if (state.categories.some((c) => c.id !== category?.id && norm(c.name) === norm(v.name))) return 'Já existe uma categoria com esse nome.';
-      const data = { name: v.name, kind: v.kind, group: v.kind === 'expense' ? v.group : null, budget: v.budget || 0, estimate: v.estimate || 0 };
+      const data = { name: v.name, kind: v.kind, group: v.kind === 'expense' ? v.group : null, budget: v.budget || 0, estimate: v.budget > 0 ? v.estimate || 0 : 0 };
       update((s) => {
         if (category) Object.assign(s.categories.find((c) => c.id === category.id), data);
         else s.categories.push({ id: uid(), archived: false, ...data });

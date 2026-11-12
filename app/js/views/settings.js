@@ -53,7 +53,7 @@ function accountsSection(ctx) {
 function categoriesSection(ctx) {
   const { state } = ctx;
   const row = (c) => {
-    const notes = [c.kind === 'income' ? 'Receita' : GROUPS[c.group] || 'Despesa', c.budget > 0 ? `limite ${money(c.budget)}` : '', c.estimate > 0 ? `variável ${money(c.estimate)}` : ''].filter(Boolean).join(' · ');
+    const notes = [c.kind === 'income' ? 'Receita' : GROUPS[c.group] || 'Despesa', c.budget > 0 ? `teto ${money(c.budget)}` : '', c.budget > 0 && c.estimate > 0 ? `sobre-teto ${money(c.estimate)}` : ''].filter(Boolean).join(' · ');
     return `<li class="row${c.archived ? ' paid' : ''}"><button type="button" class="row-body" data-action="category" data-id="${esc(c.id)}"><span class="row-main"><span class="row-title">${esc(c.name)}${c.archived ? '<span class="tag">arquivada</span>' : ''}</span><span class="row-sub">${esc(notes)}</span></span><span class="row-side"><small>editar</small></span></button></li>`;
   };
   const sorted = [...state.categories].sort((a, b) => (a.kind === b.kind ? 0 : a.kind === 'income' ? -1 : 1));

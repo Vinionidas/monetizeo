@@ -87,6 +87,7 @@ code { font-family: ui-monospace, Consolas, monospace; font-size: .92em; backgro
 .muted { color: var(--muted); }
 .pos { color: var(--accent); }
 .neg { color: var(--neg); }
+.warn { color: var(--warn); }
 .num { text-align: right; white-space: nowrap; }
 .spacer { flex: 1; }
 .loading { padding: 48px; color: var(--muted); }
@@ -251,6 +252,7 @@ button.check:hover { border-color: var(--accent); background: var(--accent-soft)
 .bar i { display: block; height: 100%; background: var(--accent); border-radius: 999px; }
 .bar.plain i { background: var(--line-strong); }
 .bar.over i { background: var(--neg); }
+.bar.warn i { background: var(--warn); }
 
 .chart { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 6px; height: 170px; }
 .col { display: grid; grid-template-rows: 1fr 1fr auto; gap: 0; border-radius: 6px; padding: 0 2px; }

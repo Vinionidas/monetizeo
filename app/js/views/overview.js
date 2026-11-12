@@ -2,7 +2,7 @@
 // orçamento e os próximos meses.
 
 import { exportBackup, openAccountForm, openBalanceSetup, openItem, payItem, receiveLoan } from '../actions.js';
-import { accountBalance, accountsNeedingBalance, cardInvoice, dailyAllowance, expensesByCategory, houseSplit, isCard, isMoneyAccount, isOverdue, leftover, monthItems, openLoans, projection, splitShares } from '../model.js';
+import { accountBalance, accountsNeedingBalance, cardInvoice, dailyAllowance, expensesByCategory, houseSplit, isCard, isMoneyAccount, isOverdue, leftover, monthItems, openLoans, projection, splitShares, budgetStatus } from '../model.js';
 import { bar } from '../ui.js';
 import { byId, diffDays, esc, fmtDate, fmtDay, fmtMonth, fmtMonthShort, money, percent, sum } from '../util.js';
 import { getMode } from '../store.js';
@@ -214,22 +214,32 @@ function budget(ctx, items) {
   const slices = top.map((t) => ({ name: t.category.name, total: t.total, color: colorOf(t.category.id) }));
   if (rest.length) slices.push({ name: `Outras (${rest.length})`, total: sum(rest, (t) => t.total), color: 'var(--cat-other)' });
 
+  const reds = [];
   const rows = totals.map(({ category, total: spent }) => {
-    const hasBudget = category.budget > 0;
-    const over = hasBudget && spent > category.budget;
-    const detail = hasBudget ? (over ? `passou ${money(spent - category.budget)} do limite` : `de ${money(category.budget)}`) : '';
+    const st = budgetStatus(category, spent);
+    if (st.state === 'red') reds.push({ category, st });
+    const detail = {
+      none: '',
+      ok: `de ${money(st.limit)}${st.margin > 0 ? ` (+${money(st.margin)} sobre-teto)` : ''}`,
+      margin: `usando ${money(st.marginUsed)} de ${money(st.margin)} do sobre-teto`,
+      red: st.margin > 0 ? `estourou o sobre-teto em ${money(st.overCeiling)}` : `passou ${money(st.overLimit)} do limite`,
+    }[st.state];
+    const tone = { margin: 'warn', red: 'neg' }[st.state] || '';
     return `
       <div class="budget-row">
         <span class="budget-name"><i class="swatch" style="background:${colorOf(category.id)}"></i>${esc(category.name)} <small class="muted">${percent(spent / total)}</small></span>
-        <span class="budget-value"><strong class="${over ? 'neg' : ''}">${esc(money(spent))}</strong> <small class="${over ? 'neg' : 'muted'}">${esc(detail)}</small></span>
-        ${hasBudget ? bar(spent / category.budget, { tone: over ? 'over' : '' }) : ''}
+        <span class="budget-value"><strong class="${tone}">${esc(money(spent))}</strong> <small class="${tone || 'muted'}">${esc(detail)}</small></span>
+        ${st.state !== 'none' ? bar(spent / st.limit, { tone: { margin: 'warn', red: 'over' }[st.state] || '' }) : ''}
       </div>`;
   }).join('');
-  return `<section class="card">${sectionHead('Gastos por categoria', '<a class="muted" href="#/ajustes">definir limites</a>')}${total > 0 ? donut(slices, total) : ''}<div class="budget">${rows}</div></section>`;
+  const alert = reds.length
+    ? `<p class="notice neg">No vermelho: ${esc(reds.map(({ category, st }) => `${category.name} (${money(st.overCeiling)} acima ${st.margin > 0 ? 'do sobre-teto' : 'do limite'})`).join(', '))}. Reduza os próximos gastos ou compense cortando em outra categoria.</p>`
+    : '';
+  return `<section class="card">${sectionHead('Gastos por categoria', '<a class="muted" href="#/ajustes">definir limites</a>')}${alert}${total > 0 ? donut(slices, total) : ''}<div class="budget">${rows}</div></section>`;
 }
 
 function forecast(ctx) {
-  const rows = projection(ctx.state, ctx.currentYm, 12, ctx.currentYm);
+  const rows = projection(ctx.state, ctx.currentYm, 12);
   const max = Math.max(...rows.map((r) => Math.abs(r.balance)), 1);
   const firstNegative = rows.find((r) => r.accumulated < 0);
   const cols = rows.map((r) => {

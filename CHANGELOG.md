@@ -2,6 +2,22 @@
 
 Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/).
 
+## [0.9.0] - 2026-11-12
+
+### Adicionado
+- Tipo de conta **Vale-alimentação / benefício** (VA/VR): tem saldo próprio, a recarga entra como renda e as compras como gasto.
+- **Titular** da conta ou cartão: lançamentos do extrato daquela conta já saem no nome dele (ex.: cartão da esposa).
+- Campo "Transferência entre contas nossas ou acerto" no lançamento (a regra existia desde a 0.7.1, mas faltava na tela).
+- Na revisão do extrato, opção de vincular à outra ponta de uma transferência entre contas de vocês: as duas saem de gastos e renda.
+
+### Corrigido
+- Crédito no extrato do cartão (estorno, devolução) entrava como renda. Agora abate a fatura e o gasto da categoria.
+  O "pagamento recebido" no extrato do cartão pode ser reconhecido sem lançar de novo o que já saiu do banco.
+- Assinatura e parcela do cartão não podiam ser vinculadas na revisão do extrato do cartão e ficavam em dobro.
+- Extratos de contas diferentes com o mesmo código de transação (FITID) eram descartados como duplicados.
+  A duplicidade agora é por conta; transações ignoradas antes continuam ignoradas.
+- O limite usado do cartão ignorava faturas em aberto com mais de 6 meses.
+
 ## [0.8.0] - 2026-11-12
 
 ### Alterado

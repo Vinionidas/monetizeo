@@ -12,6 +12,7 @@ export const SCHEMA = 1;
 export const ACCOUNT_TYPES = {
   bank: 'Conta bancária',
   cash: 'Dinheiro',
+  benefit: 'Vale-alimentação / benefício',
   card: 'Cartão de crédito',
   credit: 'Crediário / financiamento',
 };
@@ -55,8 +56,16 @@ export function normalize(state) {
 // `transfer: true` marca dinheiro que só passou pela conta (empréstimo recebido ou devolvido, acerto entre o casal).
 export const isTransfer = (entry) => !!entry.loan || entry.transfer === true || entry.source?.kind === 'loan';
 
-export const isMoneyAccount = (account) => !!account && (account.type === 'bank' || account.type === 'cash');
+// Contas com saldo próprio: banco, dinheiro e benefício (VA/VR), que recebe recarga e paga compras.
+export const isMoneyAccount = (account) => !!account && (account.type === 'bank' || account.type === 'cash' || account.type === 'benefit');
 export const isCard = (account) => !!account && account.type === 'card';
+
+/**
+ * Crédito no cartão (estorno, devolução) não é renda: abate a fatura e o gasto.
+ * Estas duas funções são a única forma de somar valores do mês.
+ */
+export const expenseValue = (item) => (item.transfer ? 0 : item.type === 'expense' ? item.amount : item.cardCredit ? -item.amount : 0);
+export const incomeValue = (item) => (item.transfer || item.cardCredit || item.type !== 'income' ? 0 : item.amount);
 
 // ---------------------------------------------------------------- cartões
 
@@ -142,7 +151,7 @@ export function effectiveMonth(state, entry, lookups = buildLookups(state)) {
     if (inst) return installmentMonth(inst, src.index);
   }
   const account = lookups.accounts.get(entry.accountId);
-  if (isCard(account) && entry.type === 'expense') return invoiceMonthFor(account, entry.date);
+  if (isCard(account)) return invoiceMonthFor(account, entry.date);
   return ymOf(entry.date);
 }
 
@@ -165,11 +174,13 @@ export function monthItems(state, ym) {
 
   const withCard = (item) => {
     const account = lookups.accounts.get(item.accountId);
-    if (isCard(account) && item.type === 'expense') {
+    if (isCard(account)) {
       item.onCard = true;
+      item.cardCredit = item.type === 'income';
       item.paid = !!invoicePayment(state, account.id, ym);
     } else {
       item.onCard = false;
+      item.cardCredit = false;
     }
     return item;
   };
@@ -213,22 +224,22 @@ export function isOverdue(item, todayDate) {
 }
 
 export function summarize(all) {
-  const items = all.filter((i) => !i.transfer);
-  const income = sum(items.filter((i) => i.type === 'income'), (i) => i.amount);
-  const expenses = items.filter((i) => i.type === 'expense');
-  const expense = sum(expenses, (i) => i.amount);
-  const paid = sum(expenses.filter((i) => i.paid), (i) => i.amount);
+  const income = round2(sum(all, incomeValue));
+  const expense = round2(sum(all, expenseValue));
+  const paid = round2(sum(all.filter((i) => i.paid), expenseValue));
   return { income, expense, paid, pending: round2(expense - paid), balance: round2(income - expense) };
 }
 
 export function expensesByCategory(state, items) {
   const totals = new Map();
   for (const item of items) {
-    if (item.type !== 'expense' || item.transfer) continue;
-    totals.set(item.categoryId, round2((totals.get(item.categoryId) || 0) + item.amount));
+    const value = expenseValue(item);
+    if (!value) continue;
+    totals.set(item.categoryId, round2((totals.get(item.categoryId) || 0) + value));
   }
   const categories = byId(state.categories);
   return [...totals.entries()]
+    .filter(([, total]) => total > 0)
     .map(([id, total]) => ({ category: categories.get(id) || { id, name: 'Sem categoria', budget: 0 }, total }))
     .sort((a, b) => b.total - a.total);
 }
@@ -249,7 +260,7 @@ export function splitShares(state, items) {
   if (state.split.mode === 'income') {
     const incomes = {};
     for (const item of items) {
-      if (item.type === 'income' && item.personId && !item.transfer) incomes[item.personId] = (incomes[item.personId] || 0) + item.amount;
+      if (item.personId && incomeValue(item)) incomes[item.personId] = (incomes[item.personId] || 0) + item.amount;
     }
     return fromWeights(incomes);
   }
@@ -262,15 +273,15 @@ export function splitShares(state, items) {
  * em aberto não gera dívida entre o casal.
  */
 export function houseSplit(state, ym, items = monthItems(state, ym)) {
-  const bills = items.filter((i) => i.scope === 'house' && i.type === 'expense' && !i.transfer);
-  const total = sum(bills, (i) => i.amount);
+  const bills = items.filter((i) => i.scope === 'house' && expenseValue(i) !== 0);
+  const total = round2(sum(bills, expenseValue));
   const shares = splitShares(state, items);
   const paidBills = bills.filter((i) => i.paid && i.personId);
-  const paidBase = sum(paidBills, (i) => i.amount);
+  const paidBase = round2(sum(paidBills, expenseValue));
   const settlements = state.settlements.filter((s) => s.month === ym);
 
   const people = state.people.map((p) => {
-    const paid = sum(paidBills.filter((i) => i.personId === p.id), (i) => i.amount);
+    const paid = sum(paidBills.filter((i) => i.personId === p.id), expenseValue);
     const share = shares[p.id] || 0;
     let net = paid - share * paidBase;
     for (const s of settlements) {
@@ -300,18 +311,17 @@ export function houseSplit(state, ym, items = monthItems(state, ym)) {
 export function leftover(state, ym, personId = null, allItems = monthItems(state, ym)) {
   const items = allItems.filter((i) => !i.transfer);
   const house = houseSplit(state, ym, items);
-  const expenses = items.filter((i) => i.type === 'expense');
-  const personalItems = expenses.filter((i) => i.scope !== 'house');
+  const personalItems = items.filter((i) => i.scope !== 'house');
   if (!personId) {
-    const income = sum(items.filter((i) => i.type === 'income'), (i) => i.amount);
-    const personal = sum(personalItems, (i) => i.amount);
+    const income = round2(sum(items, incomeValue));
+    const personal = round2(sum(personalItems, expenseValue));
     return { income, house: house.total, personal, left: round2(income - house.total - personal) };
   }
   const share = house.shares[personId] || 0;
   // Receita e gasto pessoal sem dono ("do casal") entram pela mesma proporção da casa.
-  const mine = (list) => sum(list, (i) => (i.personId === personId ? i.amount : i.personId ? 0 : i.amount * share));
-  const income = mine(items.filter((i) => i.type === 'income'));
-  const personal = mine(personalItems);
+  const mine = (list, value) => round2(sum(list, (i) => (i.personId === personId ? value(i) : i.personId ? 0 : value(i) * share)));
+  const income = mine(items, incomeValue);
+  const personal = mine(personalItems, expenseValue);
   const houseShare = round2(house.total * share);
   return { income, house: houseShare, personal, left: round2(income - houseShare - personal) };
 }
@@ -346,14 +356,14 @@ export function dailyAllowance(left, todayDate, ym) {
 // ---------------------------------------------------------------- cartões
 
 export function cardInvoice(state, card, ym) {
-  const items = monthItems(state, ym).filter((i) => i.accountId === card.id && i.type === 'expense');
+  const items = monthItems(state, ym).filter((i) => i.accountId === card.id);
   const closing = Number(card.closingDay) || 0;
   const due = Number(card.dueDay) || 0;
   const payment = invoicePayment(state, card.id, ym);
   return {
     month: ym,
     items,
-    total: sum(items, (i) => i.amount),
+    total: round2(sum(items, (i) => (i.cardCredit ? -i.amount : i.amount))),
     payment,
     paid: !!payment,
     dueDate: due ? dateIn(ym, due) : null,
@@ -368,12 +378,15 @@ export function cardInvoice(state, card, ym) {
  */
 export function cardCommitted(state, card, currentYm, horizon = 36) {
   let total = 0;
-  for (let offset = -6; offset <= horizon; offset++) {
+  // Começa na compra mais antiga do cartão, para fatura antiga esquecida em aberto também contar.
+  const months = state.entries.filter((e) => e.accountId === card.id).map((e) => effectiveMonth(state, e));
+  const oldest = months.length ? months.reduce((a, b) => (a < b ? a : b)) : currentYm;
+  for (let offset = Math.min(0, monthDiff(currentYm, oldest)); offset <= horizon; offset++) {
     const ym = addMonths(currentYm, offset);
     if (invoicePayment(state, card.id, ym)) continue;
-    const items = monthItems(state, ym).filter((i) => i.accountId === card.id && i.type === 'expense');
+    const items = monthItems(state, ym).filter((i) => i.accountId === card.id);
     // Só a fatura do mês atual conta assinaturas: as passadas não têm histórico e as futuras ainda não foram cobradas.
-    total += sum(offset === 0 ? items : items.filter((i) => i.kind !== 'recurring'), (i) => i.amount);
+    total += sum(offset === 0 ? items : items.filter((i) => i.kind !== 'recurring'), (i) => (i.cardCredit ? -i.amount : i.amount));
   }
   return round2(total);
 }

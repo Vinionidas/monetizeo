@@ -120,3 +120,83 @@ test('handler manual de fatura desconta apenas no pagamento e permite desfazer',
   await undoInvoicePayment(card, cardInvoice(state, card, '2026-11'));
   assert.equal(accountBalance(state, bank, ctx.today), 1000);
 });
+
+// ---------------------------------------------------------- revisão de 12/11
+
+import { emptyState as freshState, monthItems as itemsOf, summarize as totals, cardInvoice as invoiceOf, expensesByCategory as byCategory, cardCommitted as committedOf, isMoneyAccount as moneyAccount } from '../app/js/model.js';
+import { reviewCandidates, splitNewOfx as splitNew, transferCandidates } from '../app/js/ofx.js';
+
+function wallet() {
+  const s = freshState();
+  s.accounts = [
+    { id: 'inter', name: 'Inter', type: 'bank', opening: 0 },
+    { id: 'cc', name: 'Cartão', type: 'card', closingDay: 5, dueDay: 12 },
+    { id: 'va', name: 'VA', type: 'benefit', opening: 0 },
+  ];
+  s.categories = [{ id: 'merc', name: 'Mercado', kind: 'expense' }, { id: 'renda', name: 'Renda', kind: 'income' }];
+  return s;
+}
+
+test('crédito no cartão abate a fatura e o gasto, sem virar renda', () => {
+  const s = wallet();
+  s.entries.push(
+    { id: '1', date: '2026-11-03', description: 'Compra', amount: 500, type: 'expense', categoryId: 'merc', accountId: 'cc', paid: true },
+    { id: '2', date: '2026-11-04', description: 'Estorno', amount: 120, type: 'income', categoryId: 'merc', accountId: 'cc', paid: true },
+  );
+  const items = itemsOf(s, '2026-11');
+  assert.equal(totals(items).income, 0);
+  assert.equal(totals(items).expense, 380);
+  assert.equal(invoiceOf(s, s.accounts[1], '2026-11').total, 380);
+  assert.deepEqual(byCategory(s, items).map((t) => t.total), [380]);
+  assert.equal(committedOf(s, s.accounts[1], '2026-11'), 380);
+});
+
+test('limite do cartão conta fatura esquecida em aberto há mais de 6 meses', () => {
+  const s = wallet();
+  s.entries.push({ id: 'old', date: '2025-12-01', description: 'Antiga', amount: 90, type: 'expense', categoryId: 'merc', accountId: 'cc', paid: true });
+  assert.equal(committedOf(s, s.accounts[1], '2026-11'), 90);
+});
+
+test('assinatura do cartão aparece para vínculo na revisão do extrato do cartão', () => {
+  const s = wallet();
+  s.recurring.push({ id: 'net', description: 'Netflix', amount: 40, type: 'expense', categoryId: 'merc', accountId: 'cc', day: 20, active: true });
+  const keys = reviewCandidates(s, { accountId: 'cc', type: 'expense', date: '2026-11-20', amount: 40 }).map((i) => i.key);
+  assert.ok(keys.includes('r:net:2026-12'));
+  // no extrato do banco, conta de cartão não aparece
+  assert.equal(reviewCandidates(s, { accountId: 'inter', type: 'expense', date: '2026-11-20', amount: 40 }).length, 0);
+});
+
+test('mesmo FITID em contas diferentes não é duplicado; na mesma conta é', () => {
+  const s = wallet();
+  s.entries.push({ id: 'x', date: '2026-11-05', description: 'X', amount: 10, type: 'expense', accountId: 'inter', importId: 'ofx:0001', paid: true });
+  const row = { importId: 'ofx:0001', date: '2026-11-05', amount: 10, type: 'expense' };
+  assert.equal(splitNew(s, [row], 'va').fresh.length, 1);
+  assert.equal(splitNew(s, [row], 'inter').duplicates, 1);
+  // lançamento cuja conta foi trocada na revisão continua protegido pela conta de origem
+  s.entries[0].accountId = 'cc';
+  s.entries[0].importAccountId = 'inter';
+  assert.equal(splitNew(s, [row], 'inter').duplicates, 1);
+  // ignorado antigo (sem conta) vale para todas
+  assert.equal(splitNew({ ...s, entries: [], ofxIgnored: ['ofx:0001'] }, [row], 'va').duplicates, 1);
+});
+
+test('transferência entre contas nossas: acha a outra ponta e sai de gastos e renda', () => {
+  const s = wallet();
+  s.entries.push({ id: 'out', date: '2026-11-16', description: 'Pix para VA', amount: 200, type: 'expense', categoryId: 'merc', accountId: 'inter', paid: true });
+  const pair = transferCandidates(s, { accountId: 'va', type: 'income', amount: 200, date: '2026-11-17' });
+  assert.deepEqual(pair.map((e) => e.id), ['out']);
+  assert.equal(transferCandidates(s, { accountId: 'va', type: 'income', amount: 200, date: '2026-11-25' }).length, 0);
+  s.entries[0].transfer = true;
+  s.entries.push({ id: 'in', date: '2026-11-17', description: 'Pix recebido', amount: 200, type: 'income', categoryId: 'renda', accountId: 'va', paid: true, transfer: true });
+  assert.deepEqual([totals(itemsOf(s, '2026-11')).income, totals(itemsOf(s, '2026-11')).expense], [0, 0]);
+});
+
+test('VA (benefício) tem saldo como conta: recarga é renda, compra é gasto', () => {
+  const s = wallet();
+  assert.ok(moneyAccount(s.accounts[2]));
+  s.entries.push(
+    { id: 'r', date: '2026-11-01', description: 'Recarga VA', amount: 800, type: 'income', categoryId: 'renda', accountId: 'va', paid: true },
+    { id: 'c', date: '2026-11-02', description: 'Mercado', amount: 300, type: 'expense', categoryId: 'merc', accountId: 'va', paid: true },
+  );
+  assert.deepEqual([totals(itemsOf(s, '2026-11')).income, totals(itemsOf(s, '2026-11')).expense], [800, 300]);
+});

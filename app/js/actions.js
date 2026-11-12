@@ -6,7 +6,7 @@ import {
   ACCOUNT_TYPES, GROUPS, cardInvoice, debtBalance, openingForBalance, goalSaved, installmentStatus, isCard, isMoneyAccount,
   loanStatus, monthItems, usageCount,
 } from './model.js';
-import { decodeOfx, invoiceImportChange, invoiceImportTargets, parseOfx, splitNewOfx, withoutInvoicePayment } from './ofx.js';
+import { decodeOfx, importKey, invoiceImportChange, invoiceImportTargets, parseOfx, reviewCandidates, splitNewOfx, transferCandidates, withoutInvoicePayment } from './ofx.js';
 import { getState, replaceAll, undo, update } from './store.js';
 import { confirmDialog, openDialog, openForm, toast } from './ui.js';
 import { addMonths, byId, esc, fmtDate, fmtMonth, money, norm, round2, today, uid, ymOf } from './util.js';
@@ -54,14 +54,16 @@ function movementFields(state, values) {
     { name: 'description', label: 'Descrição', required: true, full: true, placeholder: 'Ex.: mercado' },
     { name: 'amount', label: 'Valor', type: 'money', required: true },
     { name: 'date', label: 'Data', type: 'date', required: true },
-    { name: 'expenseCategory', label: 'Categoria', type: 'select', options: categoryOptions(state, 'expense', values.categoryId), showIf: (v) => v.type === 'expense' },
-    { name: 'incomeCategory', label: 'Categoria', type: 'select', options: categoryOptions(state, 'income', values.categoryId), showIf: (v) => v.type === 'income' },
+    // Crédito no cartão (estorno) abate o gasto de uma categoria de despesa, não é renda.
+    { name: 'expenseCategory', label: 'Categoria', type: 'select', options: categoryOptions(state, 'expense', values.categoryId), showIf: (v) => v.type === 'expense' || isCardAccount(v) },
+    { name: 'incomeCategory', label: 'Categoria', type: 'select', options: categoryOptions(state, 'income', values.categoryId), showIf: (v) => v.type === 'income' && !isCardAccount(v) },
     { name: 'accountId', label: 'Conta ou cartão', type: 'select', options: accountOptions(state, values.accountId) },
     { name: 'personId', label: 'Quem', type: 'select', options: personOptions(state) },
     { name: 'scope', label: 'Essa despesa é', type: 'segmented', options: SCOPE_OPTIONS, showIf: (v) => v.type === 'expense', hint: 'Contas da casa entram na divisão entre vocês.' },
     { name: 'isLoan', label: 'Emprestei para alguém e vou receber de volta', type: 'checkbox', showIf: (v) => v.type === 'expense', hint: 'Não conta como gasto: fica em "A receber" até devolverem.' },
     { name: 'loanTo', label: 'Quem vai devolver', placeholder: 'Nome', showIf: (v) => v.type === 'expense' && v.isLoan },
-    { name: 'paid', label: 'Já foi pago / recebido', type: 'checkbox', showIf: (v) => !(v.type === 'expense' && isCardAccount(v)) },
+    { name: 'isTransfer', label: 'Transferência entre contas nossas ou acerto', type: 'checkbox', showIf: (v) => !v.isLoan && !isCardAccount(v), hint: 'Mexe no saldo da conta, mas não conta como gasto nem como renda.' },
+    { name: 'paid', label: 'Já foi pago / recebido', type: 'checkbox', showIf: (v) => !isCardAccount(v) },
   ];
 }
 
@@ -70,24 +72,28 @@ function movementValues(source) {
     ...source,
     personId: source.personId || '',
     isLoan: !!source.loan,
+    isTransfer: source.transfer === true,
     loanTo: source.loan?.to || '',
-    expenseCategory: source.type === 'expense' ? source.categoryId : undefined,
+    expenseCategory: source.type === 'expense' || source.cardCredit ? source.categoryId : undefined,
     incomeCategory: source.type === 'income' ? source.categoryId : undefined,
   };
 }
 
-function readMovement(values) {
+function readMovement(values, state = getState()) {
+  const onCard = isCard(state.accounts.find((a) => a.id === values.accountId));
+  const loan = values.type === 'expense' && values.isLoan ? { to: values.loanTo || 'Alguém' } : null;
   return {
     type: values.type,
     description: values.description,
     amount: values.amount,
     date: values.date,
-    categoryId: values.type === 'income' ? values.incomeCategory : values.expenseCategory,
+    categoryId: values.type === 'income' && !onCard ? values.incomeCategory : values.expenseCategory,
     accountId: values.accountId,
     personId: values.personId || null,
     scope: values.type === 'expense' ? values.scope : 'personal',
     paid: !!values.paid,
-    loan: values.type === 'expense' && values.isLoan ? { to: values.loanTo || 'Alguém' } : null,
+    loan,
+    transfer: !onCard && !loan && !!values.isTransfer,
   };
 }
 
@@ -250,7 +256,7 @@ export function openRecurringForm(ctx, recurring = null) {
   const state = getState();
   const base = recurring || { type: 'expense', description: '', amount: null, day: 5, categoryId: null, accountId: defaultMoneyAccount(state), personId: ctx.me, scope: 'house', start: null, end: null };
   const values = { ...movementValues(base), applyFrom: 'always', from: ctx.ym };
-  const fields = movementFields(state, values).filter((f) => !['date', 'paid', 'isLoan', 'loanTo'].includes(f.name));
+  const fields = movementFields(state, values).filter((f) => !['date', 'paid', 'isLoan', 'loanTo', 'isTransfer'].includes(f.name));
   fields.find((f) => f.name === 'amount').required = false;
   fields.find((f) => f.name === 'amount').hint = 'Deixe vazio se o valor muda todo mês.';
   fields.splice(3, 0, { name: 'day', label: 'Dia do mês', type: 'number', min: 1, max: 31, required: true });
@@ -646,18 +652,19 @@ export function openAccountForm(account = null, newType = 'bank') {
     fields: [
       { name: 'name', label: 'Nome', required: true, full: true, placeholder: 'Ex.: Inter, Nubank, Carteira' },
       { name: 'type', label: 'Tipo', type: 'select', options: Object.entries(ACCOUNT_TYPES).map(([value, label]) => ({ value, label })) },
-      { name: 'opening', label: 'Saldo inicial', type: 'money', allowNegative: true, showIf: (v) => v.type === 'bank' || v.type === 'cash', hint: 'Valor antes das movimentações da data inicial. Pode ser negativo.' },
-      { name: 'openingDate', label: 'Data inicial do saldo (opcional)', type: 'date', showIf: (v) => v.type === 'bank' || v.type === 'cash', hint: 'Saldo no início deste dia. Movimentações anteriores ficam no histórico, mas não entram no saldo. Sem data, soma todo o histórico.' },
+      { name: 'personId', label: 'Titular', type: 'select', options: personOptions(state), hint: 'Lançamentos novos e do extrato desta conta já saem no nome do titular.' },
+      { name: 'opening', label: 'Saldo inicial', type: 'money', allowNegative: true, showIf: (v) => isMoneyAccount(v), hint: 'Valor antes das movimentações da data inicial. Pode ser negativo.' },
+      { name: 'openingDate', label: 'Data inicial do saldo (opcional)', type: 'date', showIf: (v) => isMoneyAccount(v), hint: 'Saldo no início deste dia. Movimentações anteriores ficam no histórico, mas não entram no saldo. Sem data, soma todo o histórico.' },
       { name: 'closingDay', label: 'Dia do fechamento', type: 'number', min: 1, max: 31, showIf: cardOnly },
       { name: 'dueDay', label: 'Dia do vencimento', type: 'number', min: 1, max: 31, showIf: cardOnly },
       { name: 'limit', label: 'Limite', type: 'money', showIf: cardOnly },
     ],
-    values: account || { type: newType },
+    values: account ? { ...account, personId: account.personId || '' } : { type: newType, personId: '' },
     onSubmit(v) {
       if (state.accounts.some((a) => a.id !== account?.id && norm(a.name) === norm(v.name))) return 'Já existe uma conta com esse nome.';
       if (v.type === 'card' && (!v.closingDay || !v.dueDay)) return 'Informe o fechamento e o vencimento do cartão.';
       if (isMoneyAccount(v) && v.openingDate && (!/^\d{4}-\d{2}-\d{2}$/.test(v.openingDate) || today(new Date(`${v.openingDate}T12:00:00`)) !== v.openingDate || v.openingDate > today())) return 'Informe uma data inicial válida, até hoje.';
-      const data = { name: v.name, type: v.type, opening: v.opening || 0, openingDate: isMoneyAccount(v) ? v.openingDate || null : null, closingDay: v.closingDay || null, dueDay: v.dueDay || null, limit: v.limit || 0 };
+      const data = { name: v.name, type: v.type, personId: v.personId || null, opening: v.opening || 0, openingDate: isMoneyAccount(v) ? v.openingDate || null : null, closingDay: v.closingDay || null, dueDay: v.dueDay || null, limit: v.limit || 0 };
       // Só conta como "saldo informado" se a pessoa realmente mexeu no saldo ou na data (ou é conta nova).
       if (!account || Number(v.opening || 0) !== Number(account.opening || 0) || (v.openingDate || null) !== (account.openingDate || null)) data.balanceSetup = true;
       update((s) => {
@@ -713,7 +720,7 @@ function archiveAction(listName, field, item) {
 
 // ------------------------------------------------------------ extrato OFX
 
-export async function importOfxFile(ctx, file) {
+export async function importOfxFile(ctx, file, presetAccountId = null) {
   const state = getState();
   let rows;
   try {
@@ -725,28 +732,40 @@ export async function importOfxFile(ctx, file) {
     toast('Não encontrei transações nesse arquivo. Confira se é um extrato OFX.');
     return;
   }
-  const { fresh, duplicates } = splitNewOfx(state, rows);
-  const preview = fresh.slice(0, 60).map((r) => `<tr><td>${esc(fmtDate(r.date))}</td><td>${esc(r.description)}</td><td class="num ${r.type === 'income' ? 'pos' : ''}">${r.type === 'income' ? '+' : '−'} ${esc(money(r.amount))}</td></tr>`).join('');
+  const initial = presetAccountId || defaultMoneyAccount(state);
   openDialog({
     title: 'Extrato lido',
     eyebrow: file.name,
     wide: true,
     body: `
-      <p class="dialog-text"><strong>${fresh.length}</strong> transações novas${duplicates ? ` · ${duplicates} já importadas antes foram descartadas` : ''}.
-      Nada entra nos lançamentos agora: elas vão para uma fila e você confirma uma por uma.</p>
-      <label class="field"><span>Conta deste extrato</span><select data-account>${accountOptions(state).map((o) => `<option value="${esc(o.value)}">${esc(o.label)}</option>`).join('')}</select></label>
-      ${fresh.length ? `<div class="table-scroll"><table class="table"><thead><tr><th>Data</th><th>Descrição</th><th class="num">Valor</th></tr></thead><tbody>${preview}</tbody></table></div>` : ''}
-      ${fresh.length > 60 ? `<p class="hint">Mostrando as 60 primeiras de ${fresh.length}.</p>` : ''}
-      <footer class="dialog-actions"><span class="spacer"></span><button type="button" class="btn" data-close>Cancelar</button><button type="button" class="btn primary" data-queue ${fresh.length ? '' : 'disabled'}>Enviar para a fila de revisão</button></footer>`,
+      <label class="field"><span>Conta ou cartão deste extrato</span><select data-account>${accountOptions(state).map((o) => `<option value="${esc(o.value)}">${esc(o.label)}</option>`).join('')}</select></label>
+      <div data-preview></div>
+      <footer class="dialog-actions"><span class="spacer"></span><button type="button" class="btn" data-close>Cancelar</button><button type="button" class="btn primary" data-queue>Enviar para a fila de revisão</button></footer>`,
     onMount(dialog, close) {
       const select = dialog.querySelector('[data-account]');
-      select.value = defaultMoneyAccount(state);
-      dialog.querySelector('[data-queue]').addEventListener('click', () => {
+      const button = dialog.querySelector('[data-queue]');
+      select.value = initial;
+      let fresh = [];
+      // A duplicidade depende da conta: o mesmo código em outro banco é outra transação.
+      const refresh = () => {
+        const split = splitNewOfx(getState(), rows, select.value);
+        fresh = split.fresh;
+        const preview = fresh.slice(0, 60).map((r) => `<tr><td>${esc(fmtDate(r.date))}</td><td>${esc(r.description)}</td><td class="num ${r.type === 'income' ? 'pos' : ''}">${r.type === 'income' ? '+' : '−'} ${esc(money(r.amount))}</td></tr>`).join('');
+        dialog.querySelector('[data-preview]').innerHTML = `
+          <p class="dialog-text"><strong>${fresh.length}</strong> transações novas nesta conta${split.duplicates ? ` · ${split.duplicates} já importadas antes foram descartadas` : ''}.
+          Nada entra nos lançamentos agora: elas vão para uma fila e você confirma uma por uma.</p>
+          ${fresh.length ? `<div class="table-scroll"><table class="table"><thead><tr><th>Data</th><th>Descrição</th><th class="num">Valor</th></tr></thead><tbody>${preview}</tbody></table></div>` : ''}
+          ${fresh.length > 60 ? `<p class="hint">Mostrando as 60 primeiras de ${fresh.length}.</p>` : ''}`;
+        button.disabled = !fresh.length;
+      };
+      select.addEventListener('change', refresh);
+      refresh();
+      button.addEventListener('click', () => {
         const accountId = select.value;
         update((s) => { for (const row of fresh) s.ofxPending.push({ id: uid(), accountId, ...row }); });
         close();
         toast(`${fresh.length} transações aguardando revisão.`);
-        ctx.navigate('lancamentos');
+        ctx.navigate(presetAccountId ? 'cartoes' : 'lancamentos');
       });
     },
   });
@@ -755,36 +774,56 @@ export async function importOfxFile(ctx, file) {
 /** Revisão de uma transação do extrato: só vira lançamento ao confirmar. */
 export function reviewOfx(ctx, row) {
   const state = getState();
-  const month = ymOf(row.date);
-  // Previsões e contas em aberto do mesmo mês que esta transação pode estar quitando.
-  const candidates = monthItems(state, month).filter((i) => !i.paid && !i.onCard && i.type === row.type);
-  const invoices = invoiceImportTargets(state, row);
+  const account = state.accounts.find((a) => a.id === row.accountId);
+  const onCard = isCard(account);
+  const candidates = reviewCandidates(state, row);
+  const invoices = onCard ? [] : invoiceImportTargets(state, row);
+  const pairs = onCard ? [] : transferCandidates(state, row);
   const guess = candidates.find((i) => Math.abs(i.amount - row.amount) < 0.005) || null;
   const firstCategory = (kind) => state.categories.find((c) => c.kind === kind && !c.archived)?.id;
+  const cardCredit = onCard && row.type === 'income';
   const base = {
-    type: row.type, description: row.description, amount: row.amount, date: row.date,
-    categoryId: guess?.categoryId || firstCategory(row.type), accountId: row.accountId || defaultMoneyAccount(state),
-    personId: guess ? guess.personId : ctx.me, scope: guess?.scope || 'personal',
+    type: row.type, description: row.description, amount: row.amount, date: row.date, cardCredit,
+    categoryId: guess?.categoryId || firstCategory(cardCredit ? 'expense' : row.type), accountId: row.accountId || defaultMoneyAccount(state),
+    personId: guess ? guess.personId : account?.personId || ctx.me, scope: guess?.scope || 'personal',
   };
   const values = { ...movementValues(base), link: guess?.key || '' };
   const fields = movementFields(state, values).filter((f) => f.name !== 'paid');
-  if (candidates.length || invoices.length) {
+  const accountName = (id) => state.accounts.find((a) => a.id === id)?.name || 'outra conta';
+  const options = [
+    ...candidates.map((i) => ({ value: i.key, label: `${i.description} - ${money(i.amount)}${onCard ? ` · fatura ${fmtMonth(i.period || ymOf(i.date))}` : ''}` })),
+    ...invoices.map((i) => ({ value: i.key, label: `Fatura ${accountName(i.cardId)} · ${fmtMonth(i.month)} · ${money(i.amount)}${i.payment ? ' (pagamento já registrado)' : ''}` })),
+    ...pairs.map((e) => ({ value: `pair:${e.id}`, label: `Transferência ${row.type === 'expense' ? 'para' : 'de'} ${accountName(e.accountId)} · ${fmtDate(e.date)} · ${money(e.amount)}` })),
+    ...(cardCredit ? [{ value: 'cardpay', label: 'É o pagamento da fatura (já registrado pela conta do banco): não lançar' }] : []),
+  ];
+  if (options.length) {
     fields.push({
-      name: 'link', label: 'Vincular a uma conta ou fatura?', type: 'select', full: true,
-      options: [{ value: '', label: 'Não, é um lançamento novo' }, ...candidates.map((i) => ({ value: i.key, label: `${i.description} - ${money(i.amount)}` })), ...invoices.map((i) => ({ value: i.key, label: `Fatura ${state.accounts.find((a) => a.id === i.cardId)?.name || 'Cartão'} · ${fmtMonth(i.month)} · ${money(i.amount)}${i.payment ? ' (pagamento já registrado)' : ''}` }))],
-      hint: 'Para pagamento de cartão, escolha a fatura: vincula o extrato sem criar outra despesa ou descontar duas vezes. Faturas nunca são selecionadas automaticamente.',
+      name: 'link', label: 'Vincular a uma conta, fatura ou transferência?', type: 'select', full: true,
+      options: [{ value: '', label: 'Não, é um lançamento novo' }, ...options],
+      hint: onCard
+        ? 'Assinatura ou parcela do cartão: vincule para não contar duas vezes. Estorno entra como crédito e abate a fatura.'
+        : 'Pagamento de cartão: escolha a fatura. Dinheiro entre contas de vocês: escolha a transferência, e as duas pontas saem dos gastos e da renda. Nada é escolhido automaticamente.',
     });
   }
+  const ignoredKey = importKey(row.accountId, row.importId);
   openForm({
     title: 'Revisar transação do extrato',
-    eyebrow: row.memo || 'Extrato OFX',
+    eyebrow: `${account ? `${account.name} · ` : ''}${row.memo || 'Extrato OFX'}`,
     fields,
     values,
     submitLabel: 'Confirmar lançamento',
     onSubmit(v) {
       const current = getState();
       if (!current.ofxPending.some((pending) => pending.id === row.id) || splitNewOfx({ ...current, ofxPending: [] }, [row]).duplicates) return 'Esta transação já foi revisada. Reabra a fila do extrato.';
-      const data = readMovement(v);
+      if (v.link === 'cardpay') {
+        update((s) => {
+          s.ofxPending = s.ofxPending.filter((x) => x.id !== row.id);
+          s.ofxIgnored.push(ignoredKey);
+        });
+        toast('Pagamento da fatura reconhecido. Nada foi lançado em dobro.', undoAction);
+        return;
+      }
+      const data = readMovement(v, current);
       if (invoices.some((invoice) => invoice.key === v.link)) {
         let change;
         try { change = invoiceImportChange(getState(), row, data, v.link, uid()); }
@@ -793,19 +832,28 @@ export function reviewOfx(ctx, row) {
         toast('Extrato vinculado à fatura, sem duplicar a saída.', undoAction);
         return;
       }
+      const pairId = v.link?.startsWith('pair:') ? v.link.slice(5) : null;
+      if (pairId && !transferCandidates(current, row).some((e) => e.id === pairId)) return 'A outra ponta da transferência mudou. Reabra a revisão.';
       const linked = candidates.find((i) => i.key === v.link);
-      if (v.link && (!linked || !monthItems(current, month).some((i) => i.key === v.link && !i.paid && !i.onCard))) return 'A conta vinculada mudou. Reabra a revisão antes de confirmar.';
+      if (v.link && !pairId && (!linked || !reviewCandidates(current, row).some((i) => i.key === v.link))) return 'A conta vinculada mudou. Reabra a revisão antes de confirmar.';
       update((s) => {
         s.ofxPending = s.ofxPending.filter((x) => x.id !== row.id);
+        const imported = { paid: true, importId: row.importId, importAccountId: row.accountId };
+        if (pairId) {
+          const group = uid();
+          Object.assign(s.entries.find((e) => e.id === pairId), { transfer: true, transferGroup: group });
+          s.entries.push({ id: uid(), ...data, ...imported, transfer: true, transferGroup: group, loan: null });
+          return;
+        }
         if (linked?.kind === 'entry') {
-          Object.assign(s.entries.find((e) => e.id === linked.id), { ...data, paid: true, importId: row.importId });
+          Object.assign(s.entries.find((e) => e.id === linked.id), { ...data, ...imported });
           return;
         }
         const source = linked?.kind === 'recurring' ? { kind: 'recurring', id: linked.refId, period: linked.period }
           : linked?.kind === 'installment' ? { kind: 'installment', id: linked.refId, index: linked.index } : null;
-        s.entries.push({ id: uid(), ...data, paid: true, importId: row.importId, ...(source ? { source } : {}) });
+        s.entries.push({ id: uid(), ...data, ...imported, ...(source ? { source } : {}) });
       });
-      toast('Transação confirmada.', undoAction);
+      toast(pairId ? 'Transferência confirmada: fora dos gastos e da renda.' : 'Transação confirmada.', undoAction);
     },
     actions: [{
       label: 'Ignorar', danger: true,
@@ -813,7 +861,7 @@ export function reviewOfx(ctx, row) {
         close();
         update((s) => {
           s.ofxPending = s.ofxPending.filter((x) => x.id !== row.id);
-          s.ofxIgnored.push(row.importId);
+          s.ofxIgnored.push(ignoredKey);
         });
         toast('Transação ignorada.', undoAction);
       },

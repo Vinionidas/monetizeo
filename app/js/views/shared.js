@@ -49,6 +49,8 @@ export function itemRow(ctx, item, look, { showDate = false } = {}) {
     item.scope === 'house' && item.type === 'expense' ? '<span class="tag house">casa</span>' : '',
     item.loan ? '<span class="tag">emprestado</span>' : '',
     item.source?.kind === 'loan' ? '<span class="tag">devolução</span>' : '',
+    item.transfer && !item.loan && item.source?.kind !== 'loan' ? '<span class="tag">transferência</span>' : '',
+    item.cardCredit ? '<span class="tag">crédito</span>' : '',
   ].join('');
   // Em conta da casa, mostra quanto cabe a quem está usando este aparelho.
   const myShare = look.shares && ctx.me && item.scope === 'house' && item.type === 'expense' && !item.transfer && !item.variable

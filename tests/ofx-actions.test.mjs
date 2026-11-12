@@ -214,3 +214,16 @@ test('assinatura no cartão cai na fatura em que a cobrança fecha', () => {
   s.recurring.push({ id: 'luz', description: 'Luz', amount: 100, type: 'expense', categoryId: 'merc', accountId: 'inter', day: 15, active: true });
   assert.ok(itemsOf(s, '2026-11').some((i) => i.key === 'r:luz:2026-11'));
 });
+
+test('devolução de gasto no banco abate a categoria e a conta da casa, sem virar renda', () => {
+  const s = wallet();
+  s.people = [{ id: 'v', name: 'V' }, { id: 't', name: 'T' }];
+  s.entries.push(
+    { id: 'f', date: '2026-11-01', description: 'Mini feira', amount: 180, type: 'expense', categoryId: 'merc', accountId: 'inter', scope: 'house', personId: 'v', paid: true },
+    { id: 'd1', date: '2026-11-01', description: 'Devolveu', amount: 130, type: 'income', categoryId: 'merc', accountId: 'inter', scope: 'house', personId: 'v', paid: true, refund: true },
+    { id: 'd2', date: '2026-11-01', description: 'Devolveu', amount: 27, type: 'income', categoryId: 'merc', accountId: 'inter', scope: 'house', personId: 'v', paid: true, refund: true },
+  );
+  const items = itemsOf(s, '2026-11');
+  assert.deepEqual([totals(items).income, totals(items).expense], [0, 23]);
+  assert.deepEqual(byCategory(s, items).map((t) => t.total), [23]);
+});

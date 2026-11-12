@@ -2,6 +2,12 @@
 
 Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/).
 
+## [0.12.0] - 2026-11-12
+
+### Adicionado
+- Entrada marcada como **devolução de um gasto** (troco, estorno, dinheiro que voltou por Pix): não conta como renda e
+  abate o gasto da categoria — inclusive na divisão da casa, se for "da casa".
+
 ## [0.11.0] - 2026-11-12
 
 ### Alterado

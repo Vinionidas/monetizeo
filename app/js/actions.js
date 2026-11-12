@@ -58,14 +58,15 @@ function movementFields(state, values) {
     { name: 'amount', label: 'Valor', type: 'money', required: true },
     { name: 'date', label: 'Data', type: 'date', required: true },
     // Crédito no cartão (estorno) abate o gasto de uma categoria de despesa, não é renda.
-    { name: 'expenseCategory', label: 'Categoria', type: 'select', options: categoryOptions(state, 'expense', values.categoryId), showIf: (v) => v.type === 'expense' || isCardAccount(v) },
-    { name: 'incomeCategory', label: 'Categoria', type: 'select', options: categoryOptions(state, 'income', values.categoryId), showIf: (v) => v.type === 'income' && !isCardAccount(v) },
+    { name: 'expenseCategory', label: 'Categoria', type: 'select', options: categoryOptions(state, 'expense', values.categoryId), showIf: (v) => v.type === 'expense' || isCardAccount(v) || v.isRefund },
+    { name: 'incomeCategory', label: 'Categoria', type: 'select', options: categoryOptions(state, 'income', values.categoryId), showIf: (v) => v.type === 'income' && !isCardAccount(v) && !v.isRefund },
     { name: 'accountId', label: 'Conta ou cartão', type: 'select', options: accountOptions(state, values.accountId) },
     { name: 'personId', label: 'Quem', type: 'select', options: personOptions(state) },
-    { name: 'scope', label: 'Essa despesa é', type: 'segmented', options: SCOPE_OPTIONS, showIf: (v) => v.type === 'expense', hint: 'Contas da casa entram na divisão entre vocês.' },
+    { name: 'isRefund', label: 'É devolução de um gasto (troco, estorno, dinheiro que voltou)', type: 'checkbox', showIf: (v) => v.type === 'income' && !isCardAccount(v), hint: 'Não conta como renda: abate o gasto da categoria escolhida.' },
+    { name: 'scope', label: 'Essa despesa é', type: 'segmented', options: SCOPE_OPTIONS, showIf: (v) => v.type === 'expense' || (v.type === 'income' && v.isRefund), hint: 'Contas da casa entram na divisão entre vocês.' },
     { name: 'isLoan', label: 'Emprestei para alguém e vou receber de volta', type: 'checkbox', showIf: (v) => v.type === 'expense', hint: 'Não conta como gasto: fica em "A receber" até devolverem.' },
     { name: 'loanTo', label: 'Quem vai devolver', placeholder: 'Nome', showIf: (v) => v.type === 'expense' && v.isLoan },
-    { name: 'isTransfer', label: 'Transferência entre contas nossas ou acerto', type: 'checkbox', showIf: (v) => !v.isLoan && !isCardAccount(v), hint: 'Mexe no saldo da conta, mas não conta como gasto nem como renda.' },
+    { name: 'isTransfer', label: 'Transferência entre contas nossas ou acerto', type: 'checkbox', showIf: (v) => !v.isLoan && !v.isRefund && !isCardAccount(v), hint: 'Mexe no saldo da conta, mas não conta como gasto nem como renda.' },
     { name: 'paid', label: 'Já foi pago / recebido', type: 'checkbox', showIf: (v) => !isCardAccount(v) },
   ];
 }
@@ -76,8 +77,9 @@ function movementValues(source) {
     personId: source.personId || '',
     isLoan: !!source.loan,
     isTransfer: source.transfer === true,
+    isRefund: source.refund === true,
     loanTo: source.loan?.to || '',
-    expenseCategory: source.type === 'expense' || source.cardCredit ? source.categoryId : undefined,
+    expenseCategory: source.type === 'expense' || source.cardCredit || source.refund ? source.categoryId : undefined,
     incomeCategory: source.type === 'income' ? source.categoryId : undefined,
   };
 }
@@ -85,18 +87,20 @@ function movementValues(source) {
 function readMovement(values, state = getState()) {
   const onCard = isCard(state.accounts.find((a) => a.id === values.accountId));
   const loan = values.type === 'expense' && values.isLoan ? { to: values.loanTo || 'Alguém' } : null;
+  const refund = values.type === 'income' && !onCard && !!values.isRefund;
   return {
     type: values.type,
     description: values.description,
     amount: values.amount,
     date: values.date,
-    categoryId: values.type === 'income' && !onCard ? values.incomeCategory : values.expenseCategory,
+    categoryId: values.type === 'income' && !onCard && !refund ? values.incomeCategory : values.expenseCategory,
     accountId: values.accountId,
     personId: values.personId || null,
-    scope: values.type === 'expense' ? values.scope : 'personal',
+    scope: values.type === 'expense' || refund ? values.scope : 'personal',
     paid: !!values.paid,
     loan,
-    transfer: !onCard && !loan && !!values.isTransfer,
+    refund,
+    transfer: !onCard && !loan && !refund && !!values.isTransfer,
   };
 }
 
@@ -259,7 +263,7 @@ export function openRecurringForm(ctx, recurring = null) {
   const state = getState();
   const base = recurring || { type: 'expense', description: '', amount: null, day: 5, categoryId: null, accountId: defaultMoneyAccount(state), personId: ctx.me, scope: 'house', start: null, end: null };
   const values = { ...movementValues(base), applyFrom: 'always', from: ctx.ym };
-  const fields = movementFields(state, values).filter((f) => !['date', 'paid', 'isLoan', 'loanTo', 'isTransfer'].includes(f.name));
+  const fields = movementFields(state, values).filter((f) => !['date', 'paid', 'isLoan', 'loanTo', 'isTransfer', 'isRefund'].includes(f.name));
   fields.find((f) => f.name === 'amount').required = false;
   fields.find((f) => f.name === 'amount').hint = 'Deixe vazio se o valor muda todo mês.';
   fields.splice(3, 0, { name: 'day', label: 'Dia do mês', type: 'number', min: 1, max: 31, required: true });

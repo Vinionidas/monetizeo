@@ -61,11 +61,13 @@ export const isMoneyAccount = (account) => !!account && (account.type === 'bank'
 export const isCard = (account) => !!account && account.type === 'card';
 
 /**
- * Crédito no cartão (estorno, devolução) não é renda: abate a fatura e o gasto.
- * Estas duas funções são a única forma de somar valores do mês.
+ * Crédito no cartão (estorno) e devolução de um gasto (`refund`, ex.: troco de
+ * uma feira que voltou por Pix) não são renda: abatem o gasto da categoria.
+ * Estas funções são a única forma de somar valores do mês.
  */
-export const expenseValue = (item) => (item.transfer ? 0 : item.type === 'expense' ? item.amount : item.cardCredit ? -item.amount : 0);
-export const incomeValue = (item) => (item.transfer || item.cardCredit || item.type !== 'income' ? 0 : item.amount);
+export const isRefund = (item) => item.type === 'income' && (!!item.cardCredit || item.refund === true);
+export const expenseValue = (item) => (item.transfer ? 0 : item.type === 'expense' ? item.amount : isRefund(item) ? -item.amount : 0);
+export const incomeValue = (item) => (item.transfer || isRefund(item) || item.type !== 'income' ? 0 : item.amount);
 
 // ---------------------------------------------------------------- cartões
 

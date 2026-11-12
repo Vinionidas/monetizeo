@@ -5,7 +5,8 @@ Para quem vai mexer no código. O que o app faz e como usar está no [README](..
 ## Visão geral
 
 ```
-navegador (app/)  ──GET/PUT /api/state──►  server.py  ──►  data/state.json
+navegador (app/)  ──GET/PUT /api/state──►  server.py  ──►  data/state.json      (modo casa)
+navegador (app/)  ──login + REST──►  Supabase (Postgres + RLS)                  (modo nuvem)
 ```
 
 - **`app/`** — HTML, CSS e módulos JavaScript puros. Sem framework, sem build, sem dependências.
@@ -53,12 +54,39 @@ que as regras são testadas com `node --test`, sem navegador.
 Toda alteração passa por `store.update(fn)`. Ele guarda uma cópia para o "Desfazer", grava e avisa a interface, que
 redesenha a tela atual. As telas (`views/`) só leem; os formulários que alteram dados ficam em `actions.js`.
 
-### Sincronização simples
+### Sincronização: nada se perde em silêncio
 
-O servidor mantém um número de revisão. Cada gravação envia a revisão em que se baseou; se outra pessoa gravou
-antes, o servidor responde 409, o app recarrega os dados e pede para refazer a alteração. Não há mesclagem
-automática: com duas pessoas, o conflito é raro e perder silenciosamente um dado financeiro seria pior.
-O app consulta a revisão a cada 15 segundos para mostrar o que a outra pessoa mudou.
+Os dados moram em um de três lugares, atrás da mesma interface (`store.js`): Supabase (`cloud`), `server.py`
+(`server`) ou só o navegador (`local`). Em todos os modos remotos vale a mesma regra: **uma alteração do usuário
+nunca some sem aviso.**
+
+- **Revisão.** Cada gravação informa a revisão em que se baseou; se outra pessoa gravou antes, o servidor recusa
+  (409 no `server.py`; o filtro `rev=eq.N` do `PATCH` no Supabase não altera nenhuma linha).
+- **Sem internet.** Antes de qualquer envio, `savePending()` grava no aparelho a base (como estava no servidor)
+  e o estado novo. Se a conexão cai ou o app é fechado, a alteração continua lá e é enviada na próxima abertura
+  ou assim que a conexão volta. Depois de enviada, a cópia é apagada: o aparelho não guarda o histórico financeiro.
+- **Duas pessoas ao mesmo tempo.** `merge.js` junta base, versão local e versão do servidor item por item
+  (por `id`): quem mexeu em itens diferentes fica com tudo. Se os dois mexeram no mesmo item, vale a versão de
+  quem salvou primeiro, e uma cópia da outra vai para **Ajustes › Alterações que não foram salvas**. Se um lado
+  apagou e o outro editou, o item é mantido.
+- **Por que juntar o estado e não refazer as ações.** Refazer as funções que alteraram o estado dependeria de
+  objetos que ficaram velhos e não sobrevive a um recarregamento; o estado é dado puro e pode ser guardado.
+
+O app consulta a revisão a cada 15 segundos e quando a internet volta. Testes: `tests/merge.test.mjs` (junção) e
+`tests/store.test.mjs` (queda de internet, reabertura e conflito contra um Supabase falso em memória).
+
+### Uma casa por pessoa
+
+`household_members` tem índice único em `user_id`, e `join_household` recusa quem já tem casa (`ja_tem_casa`).
+O app confere antes e o banco garante depois, mesmo que alguém chame a função direto. `myHousehold` ordena por
+data de criação para nunca depender da ordem do banco.
+
+### Backups e limites do plano gratuito
+
+Os backups diários da tabela `household_backups` ficam no mesmo projeto: ajudam a desfazer um erro, mas não
+protegem se o projeto for perdido. Por isso o app lembra de baixar uma cópia a cada 30 dias (Ajustes › Dados).
+Projetos gratuitos do Supabase são pausados após cerca de uma semana sem uso e podem ser restaurados pelo painel
+([documentação](https://supabase.com/docs/guides/platform/free-project-pausing)).
 
 ### Sem service worker
 
@@ -74,9 +102,10 @@ para visitas no Wi-Fi, não criptografia: o tráfego na rede local é HTTP.
 
 `data/state.json` é `{ "rev": número, "state": {...} }`. Campos de `state` (ver `emptyState` em `model.js`):
 
-- `people`, `accounts` (`type`: `bank`, `cash`, `card`, `credit`), `categories` (`kind`, `group`, `budget`, `estimate`)
+- `people`, `accounts` (`type`: `bank`, `cash`, `card`, `credit`; `opening`, `openingDate` e `balanceSetup` para o saldo inicial), `categories` (`kind`, `group`, `budget`, `estimate`)
 - `entries` — `{ id, date, description, amount, type, categoryId, accountId, personId, scope, paid, source?, importId? }`.
-  `personId: null` significa "casal"; `scope` é `house` ou `personal`.
+  `personId: null` significa "casal"; `scope` é `house` ou `personal`; `loan: { to }` marca um empréstimo a receber
+  (devoluções são lançamentos com `source: { kind: 'loan', id }`).
 - `recurring` — com `changes` (reajustes "a partir de") e `skips` (meses pulados).
 - `installments`, `goals`, `debts`
 - `invoicePayments`, `settlements` (acertos entre o casal)

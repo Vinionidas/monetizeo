@@ -2,6 +2,21 @@
 
 Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/).
 
+## [0.6.0] - 2026-11-11
+
+### Adicionado
+- Alterações feitas sem internet ficam guardadas no aparelho e são enviadas quando a conexão volta, mesmo que
+  o app seja fechado e reaberto.
+- Quando duas pessoas salvam ao mesmo tempo, as duas versões são juntadas item por item. Se os dois mexeram no
+  mesmo item, fica a versão de quem salvou primeiro e uma cópia da outra vai para Ajustes.
+- Uma conta só pode fazer parte de uma casa, no app e no banco.
+- Confirmação ao sair da conta com alterações ainda não enviadas.
+
+### Alterado
+- Funções internas do banco deixaram de poder ser chamadas de fora (avisos do Security Advisor do Supabase: 8 → 4;
+  os 4 restantes são esperados).
+- `supabase/schema.sql` inclui o índice de uma casa por pessoa e o trancamento das funções internas.
+
 ## [0.5.0] - 2026-11-11
 
 ### Adicionado

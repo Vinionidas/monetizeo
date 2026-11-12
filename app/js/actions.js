@@ -823,6 +823,16 @@ export function reviewOfx(ctx, row) {
 
 // ------------------------------------------------------------------ backup
 
+/** Baixa a cópia que ficou guardada de alterações que conflitaram com as de outra pessoa. */
+export function downloadRescued(rescue) {
+  const blob = new Blob([JSON.stringify(rescue.state, null, 1)], { type: 'application/json' });
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = `monetizeo-alteracoes-nao-salvas-${today(new Date(rescue.at))}.json`;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+}
+
 export function exportBackup() {
   const blob = new Blob([JSON.stringify(getState(), null, 1)], { type: 'application/json' });
   const link = document.createElement('a');

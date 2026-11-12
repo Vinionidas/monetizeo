@@ -1,6 +1,7 @@
 -- Monetizeo na nuvem (Supabase).
 -- Cole este arquivo inteiro em SQL Editor > New query e clique em Run.
--- Pode rodar de novo sem medo: ele não apaga dados.
+-- Pode rodar de novo sem medo: ele não apaga dados. Se algum usuário já estiver em duas casas,
+-- o índice de "uma casa por pessoa" falha e nada é alterado: nesse caso, avise antes de seguir.
 --
 -- Modelo: cada "casa" guarda o estado do app em uma linha. Só quem é membro
 -- da casa lê ou grava. Entra-se em uma casa criando-a ou com o código de convite.
@@ -29,6 +30,10 @@ create table if not exists public.household_backups (
   state jsonb,
   primary key (household_id, day)
 );
+
+-- Uma pessoa só pode fazer parte de uma casa. Garantido pelo banco, não só pelo app.
+create unique index if not exists household_members_one_house_per_user
+  on public.household_members (user_id);
 
 alter table public.households enable row level security;
 alter table public.household_members enable row level security;
@@ -86,8 +91,13 @@ begin
   if v_id is not null then
     return v_id;
   end if;
-  insert into public.households (name, state) values (coalesce(nullif(trim(p_name), ''), 'Casa'), p_state) returning id into v_id;
-  insert into public.household_members (household_id, user_id) values (v_id, v_user);
+  begin
+    insert into public.households (name, state) values (coalesce(nullif(trim(p_name), ''), 'Casa'), p_state) returning id into v_id;
+    insert into public.household_members (household_id, user_id) values (v_id, v_user);
+  exception when unique_violation then
+    -- duas chamadas ao mesmo tempo: a casa criada aqui é desfeita e vale a que já existe
+    select household_id into v_id from public.household_members where user_id = v_user limit 1;
+  end;
   return v_id;
 end;
 $$;
@@ -102,6 +112,7 @@ as $$
 declare
   v_user uuid := auth.uid();
   v_id uuid;
+  v_current uuid;
 begin
   if v_user is null then
     raise exception 'nao_autenticado';
@@ -109,6 +120,10 @@ begin
   select id into v_id from public.households where invite_code = lower(trim(p_code));
   if v_id is null then
     raise exception 'codigo_invalido';
+  end if;
+  select household_id into v_current from public.household_members where user_id = v_user limit 1;
+  if v_current is not null and v_current <> v_id then
+    raise exception 'ja_tem_casa';
   end if;
   insert into public.household_members (household_id, user_id) values (v_id, v_user) on conflict do nothing;
   return v_id;
@@ -118,6 +133,7 @@ $$;
 revoke all on function public.create_household(text, jsonb) from public, anon;
 revoke all on function public.join_household(text) from public, anon;
 revoke all on function public.is_household_member(uuid) from public, anon;
+
 grant execute on function public.create_household(text, jsonb) to authenticated;
 grant execute on function public.join_household(text) to authenticated;
 grant execute on function public.is_household_member(uuid) to authenticated;
@@ -147,3 +163,14 @@ drop trigger if exists household_before_update on public.households;
 create trigger household_before_update
   before update on public.households
   for each row execute function public.household_before_update();
+
+-- Funções internas: ninguém de fora precisa chamá-las. (O gatilho continua disparando:
+-- a permissão de executar só é checada ao criar o gatilho.)
+revoke execute on function public.household_before_update() from public, anon, authenticated;
+-- Criada pelo Supabase quando "Enable automatic RLS" está ligado; só existe nesses projetos.
+do $$
+begin
+  if to_regprocedure('public.rls_auto_enable()') is not null then
+    execute 'revoke execute on function public.rls_auto_enable() from public, anon, authenticated';
+  end if;
+end $$;

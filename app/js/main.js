@@ -3,7 +3,7 @@
 
 import { importBackup, openEntryForm } from './actions.js';
 import * as cloud from './cloud.js';
-import { createCloudHousehold, getMode, getState, getStatus, hasData, joinCloudHousehold, load, onCodeNeeded, readLocalServerState, signOut, subscribe, update } from './store.js';
+import { createCloudHousehold, getMode, getState, getStatus, hasData, joinCloudHousehold, load, onCodeNeeded, readLocalServerState, signOut, subscribe, takeNotice, update } from './store.js';
 import { icon, openForm, toast } from './ui.js';
 import { addMonths, esc, fmtMonth, today, uid, ymOf } from './util.js';
 import * as cards from './views/cards.js';
@@ -307,6 +307,8 @@ function start() {
   shell();
   renderShellState();
   renderView();
+  const recovered = takeNotice();
+  if (recovered) toast(recovered);
   if (!ui.me && state.people.length > 1) {
     openForm({
       title: 'Quem está usando este aparelho?',
@@ -319,13 +321,17 @@ function start() {
   }
 }
 
-subscribe((reason) => {
+subscribe((reason, detail) => {
   if (reason === 'status') return renderShellState();
   if (reason === 'signed-out') {
     document.querySelectorAll('dialog[open]').forEach((d) => d.close());
     return loginScreen('Sua sessão expirou. Entre de novo para continuar.');
   }
-  if (reason === 'conflict') toast('Os dados foram alterados em outro aparelho. Atualizei a tela; refaça a última mudança.');
+  if (reason === 'merged') {
+    toast(detail?.conflicts
+      ? `Outra pessoa salvou ao mesmo tempo. Juntei as duas versões; ${detail.conflicts} item(ns) ficaram com a versão dela. Sua cópia está em Ajustes.`
+      : 'Outra pessoa salvou ao mesmo tempo. Juntei as duas alterações.');
+  }
   if (reason === 'remote') toast('Dados atualizados por outro aparelho.');
   if (!root.querySelector('#view')) return;
   renderShellState();

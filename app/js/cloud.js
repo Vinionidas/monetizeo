@@ -29,6 +29,7 @@ const MESSAGES = {
   email_not_confirmed: 'Este e-mail ainda não foi confirmado.',
   over_request_rate_limit: 'Muitas tentativas. Espere um minuto e tente de novo.',
   codigo_invalido: 'Código de convite não encontrado. Confira com quem criou a casa.',
+  ja_tem_casa: 'Esta conta já faz parte de uma casa. Só é possível participar de uma.',
   nao_autenticado: 'Sua sessão expirou. Entre de novo.',
 };
 
@@ -117,7 +118,7 @@ export async function signOut() {
 
 /** A casa de quem está logado (as regras do banco só deixam ver a própria), ou null. */
 export async function myHousehold() {
-  const rows = await authed('/rest/v1/households?select=id,name,rev,state,invite_code&limit=1');
+  const rows = await authed('/rest/v1/households?select=id,name,rev,state,invite_code&order=created_at.asc&limit=1');
   return rows?.[0] || null;
 }
 

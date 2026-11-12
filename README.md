@@ -90,7 +90,11 @@ Tudo o que você apaga ou confirma mostra um **Desfazer** por alguns segundos.
 - O acesso é pela rede de casa; fora dela, o celular não alcança os dados.
 - Não há login: quem tem o código de acesso vê tudo. "Quem usa este aparelho" serve para preencher
   o nome nos lançamentos, não para esconder dados.
-- Se os dois salvarem no mesmo instante, quem salvou por último vê um aviso e refaz a alteração.
+- Sem internet, o que você lançar fica guardado no aparelho e é enviado quando a conexão voltar, mesmo que o app
+  seja fechado. Se a outra pessoa salvou ao mesmo tempo, as duas alterações são juntadas; só quando os dois mexem
+  no mesmo item fica a versão de quem salvou primeiro, e a sua cópia aparece em Ajustes.
+- No modo nuvem, os backups diários ficam no mesmo projeto. Baixe uma cópia de vez em quando (o app lembra a cada
+  30 dias). Projetos gratuitos do Supabase pausam após cerca de uma semana sem uso e podem ser restaurados pelo painel.
 
 ## Desenvolvimento
 

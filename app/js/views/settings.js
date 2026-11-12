@@ -1,9 +1,10 @@
 // Ajustes: este aparelho, pessoas, contas e cartões, categorias e backup.
 
-import { exportBackup, importBackup, openAccountForm, openCategoryForm, openPersonForm, openSplitForm } from '../actions.js';
+import { downloadRescued, exportBackup, importBackup, openAccountForm, openCategoryForm, openPersonForm, openSplitForm } from '../actions.js';
 import { ACCOUNT_TYPES, GROUPS, accountBalance, isMoneyAccount } from '../model.js';
 import * as cloud from '../cloud.js';
-import { getHousehold, getMode, signOut } from '../store.js';
+import { getHousehold, getMode, hasUnsynced, listRescued, removeRescued, signOut } from '../store.js';
+import { confirmDialog } from '../ui.js';
 import { esc, fmtDate, money } from '../util.js';
 import { personDot, sectionHead } from './shared.js';
 
@@ -63,13 +64,39 @@ function categoriesSection(ctx) {
     </section>`;
 }
 
+function rescuedSection() {
+  const list = listRescued();
+  if (!list.length) return '';
+  const rows = list.map((r) => `
+    <li class="row"><span class="row-body static">
+      <span class="row-main"><span class="row-title">Cópia de ${esc(new Date(r.at).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }))}</span>
+      <span class="row-sub">${esc(r.reason)} · ${r.entries} lançamentos</span></span>
+      <span class="row-side"><span class="button-row"><button type="button" class="btn small" data-action="rescued-download" data-at="${r.at}">Baixar</button><button type="button" class="btn small" data-action="rescued-drop" data-at="${r.at}">Descartar</button></span></span>
+    </span></li>`).join('');
+  return `
+    <section class="card wide">
+      ${sectionHead('Alterações que não foram salvas')}
+      <p class="muted">Quando duas pessoas mexem no mesmo item ao mesmo tempo, fica a versão de quem salvou primeiro. A sua foi guardada aqui para você conferir e, se precisar, refazer. Pode descartar quando não precisar mais.</p>
+      <ul class="rows">${rows}</ul>
+    </section>`;
+}
+
+function lastBackupText() {
+  let last = null;
+  try {
+    last = localStorage.getItem('monetizeo:lastBackup');
+  } catch { /* sem armazenamento */ }
+  return last ? `Último backup baixado neste aparelho: ${fmtDate(last)}.` : 'Você ainda não baixou um backup neste aparelho.';
+}
+
 function dataSection() {
   const mode = getMode();
   const backup = `
       <div class="button-row">
         <button type="button" class="btn" data-action="export">Baixar backup</button>
         <label class="btn file-btn">Restaurar backup<input type="file" accept=".json,application/json" data-backup hidden></label>
-      </div>`;
+      </div>
+      <p class="hint">${esc(lastBackupText())}</p>`;
   if (mode === 'cloud') {
     return `
     <section class="card wide">
@@ -91,7 +118,7 @@ function dataSection() {
 }
 
 export function render(ctx) {
-  return `<div class="grid">${deviceSection(ctx)}${peopleSection(ctx)}${accountsSection(ctx)}${categoriesSection(ctx)}${dataSection()}</div>`;
+  return `<div class="grid">${deviceSection(ctx)}${peopleSection(ctx)}${accountsSection(ctx)}${categoriesSection(ctx)}${dataSection()}${rescuedSection()}</div>`;
 }
 
 export function mount(root) {
@@ -114,5 +141,18 @@ export const actions = {
   'new-category': () => openCategoryForm(),
   category: (ctx, el) => openCategoryForm(find(ctx.state.categories, el)),
   export: () => exportBackup(),
-  logout: () => signOut().then(() => location.reload()),
+  logout: async () => {
+    if (hasUnsynced()) {
+      const ok = await confirmDialog({
+        title: 'Sair com alterações sem salvar?',
+        message: 'Há alterações deste aparelho que ainda não chegaram à nuvem. Elas ficam guardadas aqui e são enviadas quando você entrar de novo.',
+        confirmLabel: 'Sair mesmo assim',
+      });
+      if (!ok) return;
+    }
+    await signOut();
+    location.reload();
+  },
+  'rescued-download': (ctx, el) => { const r = listRescued().find((x) => String(x.at) === el.dataset.at); if (r) downloadRescued(r); },
+  'rescued-drop': (ctx, el) => removeRescued(Number(el.dataset.at)),
 };

@@ -145,13 +145,14 @@ export function installmentStatus(state, inst) {
 /** Mês de competência de um lançamento (o mês em que ele "conta"). */
 export function effectiveMonth(state, entry, lookups = buildLookups(state)) {
   const src = entry.source;
-  if (src?.kind === 'recurring' && src.period) return src.period;
   if (src?.kind === 'installment') {
     const inst = lookups.installments.get(src.id);
     if (inst) return installmentMonth(inst, src.index);
   }
+  // No cartão vale a fatura em que a cobrança cai, inclusive para assinatura.
   const account = lookups.accounts.get(entry.accountId);
   if (isCard(account)) return invoiceMonthFor(account, entry.date);
+  if (src?.kind === 'recurring' && src.period) return src.period;
   return ymOf(entry.date);
 }
 
@@ -194,15 +195,27 @@ export function monthItems(state, ym) {
   }
 
   for (const r of state.recurring) {
-    if (!recurringActiveIn(r, ym) || linked.has(`r:${r.id}:${ym}`)) continue;
-    const cfg = recurringConfig(r, ym);
-    items.push(withCard({
-      key: `r:${r.id}:${ym}`, kind: 'recurring', projected: true, refId: r.id, period: ym,
-      date: dateIn(ym, cfg.day), description: cfg.description, amount: cfg.amount || 0,
-      type: cfg.type, categoryId: cfg.categoryId, accountId: cfg.accountId,
-      personId: cfg.personId ?? null, scope: cfg.scope || 'personal',
-      paid: false, variable: !(cfg.amount > 0),
-    }));
+    // `period` é o mês da cobrança. No cartão, a cobrança de um mês pode cair na
+    // fatura do mês seguinte (ou do outro), então procuramos quais caem nesta.
+    const periods = [];
+    for (const back of [0, 1, 2]) {
+      const period = addMonths(ym, -back);
+      const cfg = recurringConfig(r, period);
+      const card = lookups.accounts.get(cfg.accountId);
+      const month = isCard(card) && cfg.type === 'expense' ? invoiceMonthFor(card, dateIn(period, cfg.day)) : period;
+      if (month === ym) periods.push(period);
+    }
+    for (const period of periods) {
+      if (!recurringActiveIn(r, period) || linked.has(`r:${r.id}:${period}`)) continue;
+      const cfg = recurringConfig(r, period);
+      items.push(withCard({
+        key: `r:${r.id}:${period}`, kind: 'recurring', projected: true, refId: r.id, period,
+        date: dateIn(period, cfg.day), description: cfg.description, amount: cfg.amount || 0,
+        type: cfg.type, categoryId: cfg.categoryId, accountId: cfg.accountId,
+        personId: cfg.personId ?? null, scope: cfg.scope || 'personal',
+        paid: false, variable: !(cfg.amount > 0),
+      }));
+    }
   }
 
   for (const inst of state.installments) {

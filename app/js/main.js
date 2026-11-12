@@ -18,7 +18,7 @@ import { bigMoneyInner } from './views/shared.js';
 const ROUTES = {
   inicio: { title: 'Visão geral', icon: 'home', view: overview, short: 'Início' },
   lancamentos: { title: 'Lançamentos', icon: 'list', view: entries, short: 'Lançamentos' },
-  cartoes: { title: 'Cartões', icon: 'card', view: cards, short: 'Cartões' },
+  cartoes: { title: 'Cartões e contas', icon: 'card', view: cards, short: 'Cartões' },
   casa: { title: 'Casa', icon: 'house', view: house, short: 'Casa' },
   plano: { title: 'Planejamento', icon: 'chart', view: plan, short: 'Plano' },
   metas: { title: 'Metas e dívidas', icon: 'target', view: goals, short: 'Metas' },
@@ -304,7 +304,11 @@ const globalActions = {
   'next-month': () => { ui.ym = addMonths(ui.ym, 1); renderView(true); },
   'today-month': () => { ui.ym = ymOf(today()); renderView(true); },
   month: (ctx, el) => { ui.ym = el.dataset.ym; renderView(true); },
-  add: (ctx) => openEntryForm(ctx),
+  add: (ctx) => {
+    // Na aba Cartões, o lançamento novo já sai na conta escolhida e no nome do titular.
+    const account = routeName() === 'cartoes' ? ctx.state.accounts.find((a) => a.id === cards.selectedAccount?.()) : null;
+    openEntryForm(ctx, null, account ? { accountId: account.id, ...(account.personId ? { personId: account.personId } : {}), paid: true } : {});
+  },
 };
 
 root.addEventListener('click', (event) => {

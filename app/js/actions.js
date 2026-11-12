@@ -11,6 +11,9 @@ import { getState, replaceAll, undo, update } from './store.js';
 import { confirmDialog, openDialog, openForm, toast } from './ui.js';
 import { addMonths, byId, esc, fmtDate, fmtMonth, money, norm, round2, today, uid, ymOf } from './util.js';
 
+// Mesmas cores da aba Cartões (definidas aqui para evitar import circular com as telas).
+export const CARD_COLORS = { graphite: 'Grafite', emerald: 'Esmeralda', blue: 'Azul', purple: 'Roxo', orange: 'Laranja', red: 'Vermelho', pink: 'Rosa' };
+
 const undoAction = { label: 'Desfazer', run: () => undo() };
 
 // ------------------------------------------------------------------ opções
@@ -652,6 +655,7 @@ export function openAccountForm(account = null, newType = 'bank') {
     fields: [
       { name: 'name', label: 'Nome', required: true, full: true, placeholder: 'Ex.: Inter, Nubank, Carteira' },
       { name: 'type', label: 'Tipo', type: 'select', options: Object.entries(ACCOUNT_TYPES).map(([value, label]) => ({ value, label })) },
+      { name: 'color', label: 'Cor do cartão', type: 'select', options: [{ value: '', label: 'Automática' }, ...Object.entries(CARD_COLORS).map(([value, label]) => ({ value, label }))] },
       { name: 'personId', label: 'Titular', type: 'select', options: personOptions(state), hint: 'Lançamentos novos e do extrato desta conta já saem no nome do titular.' },
       { name: 'opening', label: 'Saldo inicial', type: 'money', allowNegative: true, showIf: (v) => isMoneyAccount(v), hint: 'Valor antes das movimentações da data inicial. Pode ser negativo.' },
       { name: 'openingDate', label: 'Data inicial do saldo (opcional)', type: 'date', showIf: (v) => isMoneyAccount(v), hint: 'Saldo no início deste dia. Movimentações anteriores ficam no histórico, mas não entram no saldo. Sem data, soma todo o histórico.' },
@@ -659,12 +663,12 @@ export function openAccountForm(account = null, newType = 'bank') {
       { name: 'dueDay', label: 'Dia do vencimento', type: 'number', min: 1, max: 31, showIf: cardOnly },
       { name: 'limit', label: 'Limite', type: 'money', showIf: cardOnly },
     ],
-    values: account ? { ...account, personId: account.personId || '' } : { type: newType, personId: '' },
+    values: account ? { ...account, personId: account.personId || '', color: account.color || '' } : { type: newType, personId: '', color: '' },
     onSubmit(v) {
       if (state.accounts.some((a) => a.id !== account?.id && norm(a.name) === norm(v.name))) return 'Já existe uma conta com esse nome.';
       if (v.type === 'card' && (!v.closingDay || !v.dueDay)) return 'Informe o fechamento e o vencimento do cartão.';
       if (isMoneyAccount(v) && v.openingDate && (!/^\d{4}-\d{2}-\d{2}$/.test(v.openingDate) || today(new Date(`${v.openingDate}T12:00:00`)) !== v.openingDate || v.openingDate > today())) return 'Informe uma data inicial válida, até hoje.';
-      const data = { name: v.name, type: v.type, personId: v.personId || null, opening: v.opening || 0, openingDate: isMoneyAccount(v) ? v.openingDate || null : null, closingDay: v.closingDay || null, dueDay: v.dueDay || null, limit: v.limit || 0 };
+      const data = { name: v.name, type: v.type, color: v.color || null, personId: v.personId || null, opening: v.opening || 0, openingDate: isMoneyAccount(v) ? v.openingDate || null : null, closingDay: v.closingDay || null, dueDay: v.dueDay || null, limit: v.limit || 0 };
       // Só conta como "saldo informado" se a pessoa realmente mexeu no saldo ou na data (ou é conta nova).
       if (!account || Number(v.opening || 0) !== Number(account.opening || 0) || (v.openingDate || null) !== (account.openingDate || null)) data.balanceSetup = true;
       update((s) => {

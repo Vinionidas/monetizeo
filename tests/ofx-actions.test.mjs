@@ -161,7 +161,7 @@ test('assinatura do cartão aparece para vínculo na revisão do extrato do cart
   const s = wallet();
   s.recurring.push({ id: 'net', description: 'Netflix', amount: 40, type: 'expense', categoryId: 'merc', accountId: 'cc', day: 20, active: true });
   const keys = reviewCandidates(s, { accountId: 'cc', type: 'expense', date: '2026-11-20', amount: 40 }).map((i) => i.key);
-  assert.ok(keys.includes('r:net:2026-12'));
+  assert.equal(keys[0], 'r:net:2026-11'); // cobrança de 20/11 cai na fatura de dezembro (fecha dia 5)
   // no extrato do banco, conta de cartão não aparece
   assert.equal(reviewCandidates(s, { accountId: 'inter', type: 'expense', date: '2026-11-20', amount: 40 }).length, 0);
 });
@@ -199,4 +199,18 @@ test('VA (benefício) tem saldo como conta: recarga é renda, compra é gasto', 
     { id: 'c', date: '2026-11-02', description: 'Mercado', amount: 300, type: 'expense', categoryId: 'merc', accountId: 'va', paid: true },
   );
   assert.deepEqual([totals(itemsOf(s, '2026-11')).income, totals(itemsOf(s, '2026-11')).expense], [800, 300]);
+});
+
+test('assinatura no cartão cai na fatura em que a cobrança fecha', () => {
+  const s = wallet();
+  s.accounts[1] = { id: 'cc', name: 'Cartão', type: 'card', closingDay: 28, dueDay: 5 };
+  s.recurring.push({ id: 'net', description: 'Netflix', amount: 40, type: 'expense', categoryId: 'merc', accountId: 'cc', day: 15, active: true });
+  const inv = (ym) => invoiceOf(s, s.accounts[1], ym).items.map((i) => i.key);
+  assert.deepEqual(inv('2026-12'), ['r:net:2026-11']); // cobrada 15/11, depois do fechamento de 28/10
+  // confirmada a cobrança, continua na mesma fatura e a previsão some
+  s.entries.push({ id: 'n', date: '2026-11-15', description: 'Netflix', amount: 40, type: 'expense', categoryId: 'merc', accountId: 'cc', paid: true, source: { kind: 'recurring', id: 'net', period: '2026-11' } });
+  assert.deepEqual(inv('2026-12'), ['e:n']);
+  // na conta do banco, nada muda: o mês é o da cobrança
+  s.recurring.push({ id: 'luz', description: 'Luz', amount: 100, type: 'expense', categoryId: 'merc', accountId: 'inter', day: 15, active: true });
+  assert.ok(itemsOf(s, '2026-11').some((i) => i.key === 'r:luz:2026-11'));
 });

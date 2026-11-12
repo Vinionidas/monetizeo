@@ -70,11 +70,12 @@ Feche e abra o Monetizeo depois de importar. Backups do próprio Monetizeo se re
 ## Como usar no dia a dia
 
 1. **Uma vez:** em *Planejamento*, cadastre o que se repete (salários, aluguel, internet, assinaturas) e as compras parceladas.
-   Em *Ajustes*, cadastre os cartões com fechamento e vencimento.
+   Em *Cartões e contas › Novo*, cadastre cada cartão de crédito (fechamento e vencimento), conta, VA e o titular de cada um.
 2. **Quando gastar:** botão *Adicionar*. Marque "Da casa" no que é dividido entre vocês.
 3. **Quando pagar uma conta prevista:** toque no círculo ao lado dela e confirme valor, data e conta.
-4. **Extrato do banco:** em *Lançamentos › Importar extrato*, envie o arquivo OFX. As transações vão para uma fila
-   e você confirma uma por uma — nada entra sozinho.
+4. **Extrato:** em *Cartões e contas*, escolha o cartão ou a conta e use *Importar OFX*. As transações vão para uma
+   fila daquela conta e você confirma uma por uma — nada entra sozinho. Assinaturas, parcelas, pagamento de fatura e
+   Pix entre contas de vocês podem ser vinculados para não contar duas vezes.
 5. **Fim do mês:** em *Casa*, veja quem deve quanto e registre o acerto.
 
 Tudo o que você apaga ou confirma mostra um **Desfazer** por alguns segundos.

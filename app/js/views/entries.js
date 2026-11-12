@@ -50,10 +50,11 @@ function listHtml(ctx) {
 function ofxQueue(ctx) {
   const pendingRows = ctx.state.ofxPending;
   if (!pendingRows.length) return '';
+  const accounts = new Map(ctx.state.accounts.map((a) => [a.id, a.name]));
   const rows = [...pendingRows].sort((a, b) => a.date.localeCompare(b.date)).map((r) => `
     <li class="row">
       <button type="button" class="row-body" data-action="review" data-id="${esc(r.id)}">
-        <span class="row-main"><span class="row-title">${esc(r.description)}</span><span class="row-sub">${esc(fmtDate(r.date))}${r.memo ? ` · ${esc(r.memo)}` : ''}</span></span>
+        <span class="row-main"><span class="row-title">${esc(r.description)}</span><span class="row-sub">${esc(fmtDate(r.date))}${accounts.get(r.accountId) ? ` · ${esc(accounts.get(r.accountId))}` : ''}${r.memo ? ` · ${esc(r.memo)}` : ''}</span></span>
         <span class="row-side"><strong class="${r.type === 'income' ? 'pos' : ''}">${r.type === 'income' ? '+' : '−'} ${esc(money(r.amount))}</strong><small>Revisar</small></span>
       </button>
     </li>`).join('');

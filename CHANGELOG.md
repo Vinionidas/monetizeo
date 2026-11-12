@@ -2,6 +2,22 @@
 
 Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/).
 
+## [0.10.0] - 2026-11-12
+
+### Adicionado
+- Aba **Cartões e contas**: um cartão visual por conta (crédito, banco, VA, dinheiro), com cor e titular. Ao escolher um:
+  - cartão de crédito: situação da fatura (aberta, fechada, vencida, paga), quando fecha e vence, total, disponível
+    do limite, próximas faturas e as compras;
+  - conta, VA ou dinheiro: saldo de hoje, quanto entrou e saiu no mês e o extrato (Pix, débitos, créditos e
+    pagamentos de fatura).
+  - "Importar OFX" ali mesmo, já na conta certa, com a fila de revisão daquela conta.
+- O botão Adicionar, nesta aba, já sai na conta escolhida e no nome do titular.
+- Resumo com o total das faturas do mês e o saldo de contas e benefícios.
+
+### Corrigido
+- Assinatura no cartão caía na fatura do mês da cobrança, não na fatura em que a cobrança fecha
+  (ex.: Netflix do dia 15 num cartão que fecha dia 28 ia para a fatura errada).
+
 ## [0.9.0] - 2026-11-12
 
 ### Adicionado

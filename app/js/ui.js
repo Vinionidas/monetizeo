@@ -112,12 +112,16 @@ function fieldHtml(field, value) {
       return `<fieldset class="field full" data-field="${field.name}"><legend>${esc(field.label)}</legend><div class="segmented">${field.options
         .map((o) => `<label><input type="radio" name="${field.name}" value="${esc(o.value)}" ${String(o.value) === String(value ?? '') ? 'checked' : ''}><span>${esc(o.label)}</span></label>`)
         .join('')}</div>${hint}</fieldset>`;
-    case 'picker':
-      // Grade de opções visuais (ex.: mascotes): cada opção tem `html` e `label`.
-      // Opções com `group` ganham um título quando o grupo muda.
-      return `<fieldset class="field full picker" data-field="${field.name}"><legend>${esc(field.label)}</legend><div class="picker-grid">${field.options
-        .map((o, i) => `${o.group && o.group !== field.options[i - 1]?.group ? `<p class="picker-group">${esc(o.group)}</p>` : ''}<label title="${esc(o.label)}"><input type="radio" name="${field.name}" value="${esc(o.value)}" ${String(o.value) === String(value ?? '') ? 'checked' : ''}><span class="picker-art">${o.html || ''}</span><small>${esc(o.label)}</small></label>`)
+    case 'picker': {
+      // Grade de opções visuais. Opções com `group` viram abas; sem grupo, aparecem sempre (ex.: "Inicial").
+      const groups = [...new Set(field.options.map((o) => o.group).filter(Boolean))];
+      const selected = field.options.find((o) => String(o.value) === String(value ?? ''));
+      const current = selected?.group || groups[0];
+      const tabs = groups.length > 1 ? `<div class="segmented compact picker-tabs" role="tablist">${groups.map((g) => `<button type="button" role="tab" data-picker-tab="${esc(g)}" class="${g === current ? 'on' : ''}" aria-selected="${g === current}">${esc(g)}</button>`).join('')}</div>` : '';
+      return `<fieldset class="field full picker" data-field="${field.name}"><legend>${esc(field.label)}</legend>${tabs}<div class="picker-grid">${field.options
+        .map((o) => `<label title="${esc(o.label)}" ${o.group ? `data-group="${esc(o.group)}"` : ''} ${o.group && groups.length > 1 && o.group !== current ? 'hidden' : ''}><input type="radio" name="${field.name}" value="${esc(o.value)}" ${String(o.value) === String(value ?? '') ? 'checked' : ''}><span class="picker-art">${o.html || ''}</span><small>${esc(o.label)}</small></label>`)
         .join('')}</div>${hint}</fieldset>`;
+    }
     case 'swatches':
       // Cores prontas em bolinhas; a atual entra na lista se não for uma delas.
       return `<fieldset class="field full" data-field="${field.name}"><legend>${esc(field.label)}</legend><div class="swatches">${[...field.options, ...(value && !field.options.some((o) => o.value.toLowerCase() === String(value).toLowerCase()) ? [{ value, label: 'Cor atual' }] : [])]
@@ -188,6 +192,12 @@ export function openForm({ title, eyebrow, fields, values = {}, submitLabel = 'S
           el.hidden = !field.showIf(current);
         }
       };
+      // Abas dos seletores visuais: só mostram/escondem opções, não mudam o valor.
+      form.querySelectorAll('[data-picker-tab]').forEach((tab) => tab.addEventListener('click', () => {
+        const box = tab.closest('.picker');
+        box.querySelectorAll('[data-picker-tab]').forEach((t) => { t.classList.toggle('on', t === tab); t.setAttribute('aria-selected', t === tab); });
+        box.querySelectorAll('label[data-group]').forEach((l) => { l.hidden = l.dataset.group !== tab.dataset.pickerTab; });
+      }));
       form.addEventListener('input', refresh);
       form.addEventListener('change', refresh);
       refresh();

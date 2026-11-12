@@ -8,7 +8,7 @@ import {
 } from './model.js';
 import { decodeOfx, importKey, invoiceImportChange, invoiceImportTargets, parseOfx, reviewCandidates, splitNewOfx, transferCandidates, withoutInvoicePayment } from './ofx.js';
 import * as cloud from './cloud.js';
-import { mascotOptions } from './mascots.js';
+import { mascotOf, mascotOptions } from './mascots.js';
 import { getMode, getState, replaceAll, undo, update } from './store.js';
 import { confirmDialog, openDialog, openForm, toast } from './ui.js';
 import { addMonths, byId, esc, fmtDate, fmtMonth, money, norm, round2, today, uid, ymOf } from './util.js';
@@ -655,8 +655,8 @@ export function openPersonForm(person, onLinked = () => {}) {
     { name: 'nickname', label: 'Apelido (opcional)', placeholder: 'Como aparece nas telas' },
     { name: 'color', label: 'Cor', type: 'swatches', options: PERSON_COLORS },
     {
-      name: 'mascot', label: 'Mascote', type: 'picker',
-      options: [{ value: '', label: 'Inicial', group: 'Ilustrados', html: `<b>${esc((person.nickname || person.name || '?').charAt(0).toUpperCase())}</b>` }, ...mascotOptions()],
+      name: 'mascot', label: 'Avatar', type: 'picker',
+      options: [{ value: '', label: 'Inicial', html: `<b>${esc((person.nickname || person.name || '?').charAt(0).toUpperCase())}</b>` }, ...mascotOptions()],
     },
   ];
   if (online && !linkedToOther) {
@@ -666,7 +666,7 @@ export function openPersonForm(person, onLinked = () => {}) {
     title: 'Perfil',
     eyebrow: linkedToOther ? `Ligado ao login ${person.loginEmail || 'de outra pessoa'}` : '',
     fields,
-    values: { ...person, nickname: person.nickname || '', mascot: person.mascot || '', isMe: linkedToMe },
+    values: { ...person, nickname: person.nickname || '', mascot: mascotOf(person), isMe: linkedToMe },
     onSubmit(v) {
       update((s) => {
         const target = s.people.find((p) => p.id === person.id);

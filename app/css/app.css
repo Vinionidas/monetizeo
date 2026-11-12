@@ -537,7 +537,6 @@ button.check:hover { border-color: var(--accent); background: var(--accent-soft)
 .avatar.photo img, .picker-art img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .avatar.photo { background: var(--surface-2); box-shadow: 0 0 0 2px var(--c); }
 .picker-art:has(img) { overflow: hidden; }
-.picker-group { grid-column: 1 / -1; margin: 6px 0 -2px; font-size: .78rem; color: var(--muted); font-weight: 600; }
 .swatches { display: flex; flex-wrap: wrap; gap: 10px; padding: 5px; }
 .swatches label { cursor: pointer; }
 .swatches input { position: absolute; opacity: 0; pointer-events: none; }
@@ -545,3 +544,5 @@ button.check:hover { border-color: var(--accent); background: var(--accent-soft)
 .swatches label:hover i { transform: scale(1.08); }
 .swatches input:checked + i { box-shadow: 0 0 0 3px var(--surface), 0 0 0 5px var(--text); }
 .swatches input:focus-visible + i { outline: 2px solid var(--accent); outline-offset: 4px; }
+.picker-tabs { margin: 2px 0 10px; }
+.picker-grid label[hidden] { display: none; }

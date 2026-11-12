@@ -2,6 +2,14 @@
 
 Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/).
 
+## [0.18.0] - 2026-11-12
+
+### Alterado
+- Avatares do perfil agora são só ilustrações, em abas: **Pessoas** (exploradora espacial, chef, minimalista ×2),
+  **Animais** (capivara, arara-azul, gato laranja, gato preto) e **Fantasia** (fênix, gato astronauta).
+- Os desenhos da 0.15 saíram. Quem usava a capivara ou o gato desenhados passa sozinho para a versão ilustrada;
+  os outros voltam para a inicial.
+
 ## [0.17.0] - 2026-11-12
 
 ### Alterado

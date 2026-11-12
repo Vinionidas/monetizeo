@@ -118,6 +118,11 @@ function fieldHtml(field, value) {
       return `<fieldset class="field full picker" data-field="${field.name}"><legend>${esc(field.label)}</legend><div class="picker-grid">${field.options
         .map((o, i) => `${o.group && o.group !== field.options[i - 1]?.group ? `<p class="picker-group">${esc(o.group)}</p>` : ''}<label title="${esc(o.label)}"><input type="radio" name="${field.name}" value="${esc(o.value)}" ${String(o.value) === String(value ?? '') ? 'checked' : ''}><span class="picker-art">${o.html || ''}</span><small>${esc(o.label)}</small></label>`)
         .join('')}</div>${hint}</fieldset>`;
+    case 'swatches':
+      // Cores prontas em bolinhas; a atual entra na lista se não for uma delas.
+      return `<fieldset class="field full" data-field="${field.name}"><legend>${esc(field.label)}</legend><div class="swatches">${[...field.options, ...(value && !field.options.some((o) => o.value.toLowerCase() === String(value).toLowerCase()) ? [{ value, label: 'Cor atual' }] : [])]
+        .map((o) => `<label title="${esc(o.label)}"><input type="radio" name="${field.name}" value="${esc(o.value)}" ${String(o.value).toLowerCase() === String(value ?? '').toLowerCase() ? 'checked' : ''} aria-label="${esc(o.label)}"><i style="background:${esc(o.value)}"></i></label>`)
+        .join('')}</div>${hint}</fieldset>`;
     case 'checkbox':
       return `<label class="field checkbox full" data-field="${field.name}"><input type="checkbox" name="${field.name}" ${value ? 'checked' : ''}><span>${esc(field.label)}</span>${hint}</label>`;
     case 'money':

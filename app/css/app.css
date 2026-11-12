@@ -535,3 +535,10 @@ button.check:hover { border-color: var(--accent); background: var(--accent-soft)
 .avatar.photo { background: var(--surface-2); box-shadow: 0 0 0 2px var(--c); }
 .picker-art:has(img) { overflow: hidden; }
 .picker-group { grid-column: 1 / -1; margin: 6px 0 -2px; font-size: .78rem; color: var(--muted); font-weight: 600; }
+.swatches { display: flex; flex-wrap: wrap; gap: 10px; padding: 5px; }
+.swatches label { cursor: pointer; }
+.swatches input { position: absolute; opacity: 0; pointer-events: none; }
+.swatches i { display: block; width: 34px; height: 34px; border-radius: 50%; box-shadow: inset 0 0 0 1px rgba(0,0,0,.12); transition: transform .12s ease; }
+.swatches label:hover i { transform: scale(1.08); }
+.swatches input:checked + i { box-shadow: 0 0 0 3px var(--surface), 0 0 0 5px var(--text); }
+.swatches input:focus-visible + i { outline: 2px solid var(--accent); outline-offset: 4px; }

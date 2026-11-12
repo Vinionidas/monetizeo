@@ -633,6 +633,14 @@ export function removeSettlement(id) {
 
 // --------------------------------------------------------------- cadastros
 
+// Cores do perfil: fortes o bastante para a borda do avatar nos temas claro e escuro.
+const PERSON_COLORS = [
+  { value: '#2f6fed', label: 'Azul' }, { value: '#d6457b', label: 'Rosa' }, { value: '#0f9b6e', label: 'Esmeralda' },
+  { value: '#7a4fd6', label: 'Roxo' }, { value: '#eb6834', label: 'Laranja' }, { value: '#e0a100', label: 'Amarelo' },
+  { value: '#d93b3b', label: 'Vermelho' }, { value: '#0e9aa7', label: 'Turquesa' }, { value: '#8a5a3c', label: 'Marrom' },
+  { value: '#5b6770', label: 'Grafite' },
+];
+
 /** Perfil: nome, apelido, cor, mascote e (na nuvem) ligação com o login. */
 export function openPersonForm(person, onLinked = () => {}) {
   const online = getMode() === 'cloud' && cloud.signedIn();
@@ -642,7 +650,7 @@ export function openPersonForm(person, onLinked = () => {}) {
   const fields = [
     { name: 'name', label: 'Nome', required: true },
     { name: 'nickname', label: 'Apelido (opcional)', placeholder: 'Como aparece nas telas' },
-    { name: 'color', label: 'Cor', type: 'color' },
+    { name: 'color', label: 'Cor', type: 'swatches', options: PERSON_COLORS },
     {
       name: 'mascot', label: 'Mascote', type: 'picker',
       options: [{ value: '', label: 'Inicial', group: 'Ilustrados', html: `<b>${esc((person.nickname || person.name || '?').charAt(0).toUpperCase())}</b>` }, ...mascotOptions()],

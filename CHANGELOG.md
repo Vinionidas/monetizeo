@@ -2,6 +2,11 @@
 
 Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/).
 
+## [0.16.1] - 2026-11-12
+
+### Alterado
+- Cor do perfil escolhida entre 10 cores prontas, em vez do seletor de paleta.
+
 ## [0.16.0] - 2026-11-12
 
 ### Adicionado

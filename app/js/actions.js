@@ -8,7 +8,7 @@ import {
 } from './model.js';
 import { decodeOfx, importKey, invoiceImportChange, invoiceImportTargets, parseOfx, reviewCandidates, splitNewOfx, transferCandidates, withoutInvoicePayment } from './ofx.js';
 import * as cloud from './cloud.js';
-import { MASCOTS } from './mascots.js';
+import { mascotOptions } from './mascots.js';
 import { getMode, getState, replaceAll, undo, update } from './store.js';
 import { confirmDialog, openDialog, openForm, toast } from './ui.js';
 import { addMonths, byId, esc, fmtDate, fmtMonth, money, norm, round2, today, uid, ymOf } from './util.js';
@@ -645,8 +645,7 @@ export function openPersonForm(person, onLinked = () => {}) {
     { name: 'color', label: 'Cor', type: 'color' },
     {
       name: 'mascot', label: 'Mascote', type: 'picker',
-      options: [{ value: '', label: 'Inicial', html: `<b>${esc((person.nickname || person.name || '?').charAt(0).toUpperCase())}</b>` },
-        ...Object.entries(MASCOTS).map(([value, m]) => ({ value, label: m.name, html: m.svg }))],
+      options: [{ value: '', label: 'Inicial', group: 'Ilustrados', html: `<b>${esc((person.nickname || person.name || '?').charAt(0).toUpperCase())}</b>` }, ...mascotOptions()],
     },
   ];
   if (online && !linkedToOther) {

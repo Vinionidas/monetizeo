@@ -114,8 +114,9 @@ function fieldHtml(field, value) {
         .join('')}</div>${hint}</fieldset>`;
     case 'picker':
       // Grade de opções visuais (ex.: mascotes): cada opção tem `html` e `label`.
+      // Opções com `group` ganham um título quando o grupo muda.
       return `<fieldset class="field full picker" data-field="${field.name}"><legend>${esc(field.label)}</legend><div class="picker-grid">${field.options
-        .map((o) => `<label title="${esc(o.label)}"><input type="radio" name="${field.name}" value="${esc(o.value)}" ${String(o.value) === String(value ?? '') ? 'checked' : ''}><span class="picker-art">${o.html || ''}</span><small>${esc(o.label)}</small></label>`)
+        .map((o, i) => `${o.group && o.group !== field.options[i - 1]?.group ? `<p class="picker-group">${esc(o.group)}</p>` : ''}<label title="${esc(o.label)}"><input type="radio" name="${field.name}" value="${esc(o.value)}" ${String(o.value) === String(value ?? '') ? 'checked' : ''}><span class="picker-art">${o.html || ''}</span><small>${esc(o.label)}</small></label>`)
         .join('')}</div>${hint}</fieldset>`;
     case 'checkbox':
       return `<label class="field checkbox full" data-field="${field.name}"><input type="checkbox" name="${field.name}" ${value ? 'checked' : ''}><span>${esc(field.label)}</span>${hint}</label>`;

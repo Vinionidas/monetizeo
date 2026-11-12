@@ -95,12 +95,31 @@ export const MASCOTS = {
   },
 };
 
+// Avatares ilustrados: imagens em app/avatars/<arquivo>.webp (256 px, ~6 KB).
+// Para acrescentar um, basta pôr a imagem na pasta e uma linha aqui.
+const ILLUSTRATED = [
+  ['exploradora-espacial', 'Exploradora espacial'],
+  ['capivara', 'Capivara'],
+];
+for (const [file, name] of ILLUSTRATED) {
+  MASCOTS[`img-${file}`] = { name, group: 'Ilustrados', img: `avatars/${file}.webp` };
+}
+for (const m of Object.values(MASCOTS)) m.group ||= 'Desenhos';
+
+/** Conteúdo do avatar (imagem ou desenho), sem o círculo. */
+export const mascotArt = (m) => (m.img ? `<img src="${m.img}" alt="" loading="lazy" decoding="async">` : m.svg);
+
+/** Opções do seletor: ilustrados primeiro, depois os desenhos. */
+export const mascotOptions = () => Object.entries(MASCOTS)
+  .sort(([, a], [, b]) => (a.group === b.group ? 0 : a.group === 'Ilustrados' ? -1 : 1))
+  .map(([value, m]) => ({ value, label: m.name, group: m.group, html: mascotArt(m) }));
+
 /** Avatar da pessoa: mascote (ou a inicial) num círculo da cor dela. */
 export function avatar(person, size = 28) {
   if (!person) return `<span class="avatar joint" style="--s:${size}px" title="Casal"></span>`;
   const mascot = MASCOTS[person.mascot];
-  const inner = mascot ? mascot.svg : `<b>${(person.nickname || person.name || '?').trim().charAt(0).toUpperCase()}</b>`;
-  return `<span class="avatar" style="--c:${person.color || '#888'};--s:${size}px" title="${(person.nickname || person.name || '').replace(/"/g, '&quot;')}">${inner}</span>`;
+  const inner = mascot ? mascotArt(mascot) : `<b>${(person.nickname || person.name || '?').trim().charAt(0).toUpperCase()}</b>`;
+  return `<span class="avatar${mascot?.img ? ' photo' : ''}" style="--c:${person.color || '#888'};--s:${size}px" title="${(person.nickname || person.name || '').replace(/"/g, '&quot;')}">${inner}</span>`;
 }
 
 /** Como chamar a pessoa nas telas: apelido, se tiver. */

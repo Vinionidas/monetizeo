@@ -2,6 +2,12 @@
 
 Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/).
 
+## [0.16.0] - 2026-11-12
+
+### Adicionado
+- Avatares ilustrados (exploradora espacial e capivara) no perfil, acima dos desenhos. Novos avatares entram pondo
+  a imagem em `app/avatars/` e uma linha em `app/js/mascots.js`.
+
 ## [0.15.0] - 2026-11-12
 
 ### Adicionado

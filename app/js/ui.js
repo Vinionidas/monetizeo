@@ -112,6 +112,11 @@ function fieldHtml(field, value) {
       return `<fieldset class="field full" data-field="${field.name}"><legend>${esc(field.label)}</legend><div class="segmented">${field.options
         .map((o) => `<label><input type="radio" name="${field.name}" value="${esc(o.value)}" ${String(o.value) === String(value ?? '') ? 'checked' : ''}><span>${esc(o.label)}</span></label>`)
         .join('')}</div>${hint}</fieldset>`;
+    case 'picker':
+      // Grade de opções visuais (ex.: mascotes): cada opção tem `html` e `label`.
+      return `<fieldset class="field full picker" data-field="${field.name}"><legend>${esc(field.label)}</legend><div class="picker-grid">${field.options
+        .map((o) => `<label title="${esc(o.label)}"><input type="radio" name="${field.name}" value="${esc(o.value)}" ${String(o.value) === String(value ?? '') ? 'checked' : ''}><span class="picker-art">${o.html || ''}</span><small>${esc(o.label)}</small></label>`)
+        .join('')}</div>${hint}</fieldset>`;
     case 'checkbox':
       return `<label class="field checkbox full" data-field="${field.name}"><input type="checkbox" name="${field.name}" ${value ? 'checked' : ''}><span>${esc(field.label)}</span>${hint}</label>`;
     case 'money':
@@ -122,6 +127,8 @@ function fieldHtml(field, value) {
     case 'month':
     case 'color':
       return wrap(`<input id="${id}" name="${field.name}" type="${field.type}" value="${esc(value ?? '')}" ${required}>`);
+    case 'password':
+      return wrap(`<input id="${id}" name="${field.name}" type="password" autocomplete="new-password" value="" ${required}>`);
     default:
       return wrap(`<input id="${id}" name="${field.name}" type="text" autocomplete="off" placeholder="${esc(field.placeholder || '')}" value="${esc(value ?? '')}" ${required}>`);
   }
@@ -135,6 +142,7 @@ function readForm(form, fields) {
     if (field.type === 'checkbox') values[field.name] = control.checked;
     else if (field.type === 'money') values[field.name] = control.value.trim() === '' ? null : parseMoney(control.value);
     else if (field.type === 'number') values[field.name] = control.value === '' ? null : Number(control.value);
+    else if (field.type === 'password') values[field.name] = control.value;
     else values[field.name] = typeof control.value === 'string' ? control.value.trim() : control.value;
   }
   return values;

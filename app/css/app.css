@@ -509,3 +509,25 @@ button.check:hover { border-color: var(--accent); background: var(--accent-soft)
 .daily .fun { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .daily .fun span { font-weight: 550; }
 .icon-btn.small { width: 28px; height: 28px; flex: none; }
+
+/* ------------------------------------------------------------ perfil */
+.avatar {
+  --s: 28px; --c: #888;
+  flex: none; display: inline-grid; place-items: center; width: var(--s); height: var(--s); border-radius: 50%;
+  background: color-mix(in srgb, var(--c) 28%, var(--surface)); box-shadow: inset 0 0 0 2px var(--c); overflow: hidden; vertical-align: middle;
+}
+.avatar svg { width: 92%; height: 92%; }
+.avatar b { font-size: calc(var(--s) * .45); color: var(--text); }
+.avatar.joint { background: var(--surface-2); box-shadow: inset 0 0 0 2px var(--line-strong); }
+.person-line { display: inline-flex; align-items: center; gap: 10px; }
+.person-line small { display: block; }
+.foot-me { display: flex; align-items: center; gap: 8px; }
+.picker-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(76px, 1fr)); gap: 8px; }
+.picker-grid label { display: grid; justify-items: center; gap: 4px; padding: 8px 4px; border: 1px solid var(--line); border-radius: var(--radius-sm); cursor: pointer; }
+.picker-grid input { position: absolute; opacity: 0; pointer-events: none; }
+.picker-grid label:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); }
+.picker-grid label:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+.picker-art { display: grid; place-items: center; width: 48px; height: 48px; border-radius: 50%; background: var(--surface-2); }
+.picker-art svg { width: 44px; height: 44px; }
+.picker-grid small { font-size: .74rem; color: var(--muted); }
+.link-btn { border: 0; background: none; padding: 0; color: var(--accent-strong); font-weight: 600; text-decoration: underline; cursor: pointer; }

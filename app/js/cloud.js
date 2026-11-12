@@ -31,6 +31,11 @@ const MESSAGES = {
   codigo_invalido: 'Código de convite não encontrado. Confira com quem criou a casa.',
   ja_tem_casa: 'Esta conta já faz parte de uma casa. Só é possível participar de uma.',
   nao_autenticado: 'Sua sessão expirou. Entre de novo.',
+  same_password: 'A nova senha precisa ser diferente da atual.',
+  weak_password: 'Senha fraca. Use pelo menos 6 caracteres, misturando letras e números.',
+  over_email_send_rate_limit: 'Muitos e-mails enviados. Espere alguns minutos e tente de novo.',
+  otp_expired: 'O link expirou ou já foi usado. Peça um novo.',
+  reauthentication_needed: 'Por segurança, saia e entre de novo antes de trocar a senha.',
 };
 
 function setSession(next) {
@@ -102,6 +107,57 @@ const authed = async (path, options = {}) => call(path, { ...options, token: awa
 
 export const signedIn = () => !!session;
 export const userEmail = () => session?.email || '';
+
+/** Id do usuário logado (campo `sub` do token), para ligar o perfil ao login. */
+export function userId() {
+  try {
+    const part = session.access_token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+    return JSON.parse(atob(part)).sub || '';
+  } catch {
+    return '';
+  }
+}
+
+/** Troca a senha de quem está logado. */
+export async function updatePassword(password) {
+  await authed('/auth/v1/user', { method: 'PUT', body: { password } });
+}
+
+/**
+ * Envia o e-mail de "esqueci minha senha". O link volta para este endereço do
+ * site (que precisa estar liberado em Authentication > URL Configuration).
+ */
+export async function recoverPassword(email) {
+  const back = location.origin + location.pathname;
+  await call(`/auth/v1/recover?redirect_to=${encodeURIComponent(back)}`, { method: 'POST', body: { email } });
+}
+
+/**
+ * Lê o retorno do link do e-mail (#access_token=...&type=recovery) e abre a
+ * sessão. Devolve 'recovery', { error } ou null quando não é retorno de link.
+ */
+export async function takeAuthRedirect() {
+  const hash = location.hash.replace(/^#\/?/, '');
+  if (!/access_token=|error_description=/.test(hash)) return null;
+  const params = new URLSearchParams(hash);
+  history.replaceState(null, '', location.pathname + location.search);
+  if (params.get('error_description')) {
+    const code = params.get('error_code') || '';
+    return { error: MESSAGES[code] || params.get('error_description').replace(/\+/g, ' ') };
+  }
+  setSession(fromAuth({
+    access_token: params.get('access_token'),
+    refresh_token: params.get('refresh_token'),
+    expires_in: Number(params.get('expires_in')) || 3600,
+  }));
+  try {
+    const user = await authed('/auth/v1/user');
+    setSession({ ...session, email: user?.email || '' });
+  } catch {
+    // e-mail é só para exibir; a troca de senha funciona sem ele
+  }
+  return params.get('type') === 'recovery' ? 'recovery' : 'signed-in';
+}
 
 export async function signIn(email, password) {
   const body = await call('/auth/v1/token?grant_type=password', { method: 'POST', body: { email, password } });

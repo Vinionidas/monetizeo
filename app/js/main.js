@@ -14,6 +14,7 @@ import * as overview from './views/overview.js';
 import * as plan from './views/plan.js';
 import * as settings from './views/settings.js';
 import { bigMoneyInner } from './views/shared.js';
+import { avatar, displayName } from './mascots.js';
 
 const ROUTES = {
   inicio: { title: 'Visão geral', icon: 'home', view: overview, short: 'Início' },
@@ -108,7 +109,7 @@ function renderShellState() {
   const isCloud = getMode() === 'cloud';
   const sync = getMode() === 'local' ? ['warn', 'Só neste aparelho'] : status === 'offline' ? ['bad', isCloud ? 'Sem internet: salva quando voltar' : 'Sem conexão com o servidor'] : status === 'saving' ? ['', 'Salvando…'] : ['ok', isCloud ? 'Salvo na nuvem' : 'Salvo e compartilhado'];
   const foot = root.querySelector('[data-foot]');
-  if (foot) foot.innerHTML = `<span class="sync ${sync[0]}"><i></i>${esc(sync[1])}</span>${me ? `<small class="muted">Neste aparelho: ${esc(me.name)}</small>` : ''}`;
+  if (foot) foot.innerHTML = `<span class="sync ${sync[0]}"><i></i>${esc(sync[1])}</span>${me ? `<a class="foot-me" href="#/ajustes">${avatar(me, 26)}<small class="muted">Neste aparelho: ${esc(displayName(me))}</small></a>` : ''}`;
   document.body.dataset.sync = sync[0];
 }
 
@@ -242,13 +243,58 @@ function loginScreen(notice = '') {
         <label class="field full"><span>Senha</span><input name="password" type="password" required autocomplete="current-password"></label>
       </div>
       <p class="form-error" role="alert" hidden></p>
-      <footer class="dialog-actions"><span class="spacer"></span><button class="btn primary">Entrar</button></footer>
+      <footer class="dialog-actions"><button type="button" class="link-btn" data-forgot>Esqueci minha senha</button><span class="spacer"></span><button class="btn primary">Entrar</button></footer>
     </form>`);
+  card.querySelector('[data-forgot]').addEventListener('click', () => forgotScreen(card.querySelector('[name=email]').value.trim()));
   card.querySelector('[data-login]').addEventListener('submit', (event) => {
     event.preventDefault();
     const form = event.target;
     busy(form.querySelector('button'), async () => {
       await cloud.signIn(form.email.value.trim(), form.password.value);
+      await boot();
+    }).catch((error) => showError(card, error));
+  });
+}
+
+/** "Esqueci minha senha": manda o link por e-mail. */
+function forgotScreen(email = '') {
+  const card = gate('Esqueci minha senha', 'Digite o e-mail da sua conta. Vamos mandar um link para você criar uma senha nova.', `
+    <form class="form" data-forgot-form>
+      <div class="form-grid"><label class="field full"><span>E-mail</span><input name="email" type="email" required autocomplete="username" inputmode="email" value="${esc(email)}"></label></div>
+      <p class="form-error" role="alert" hidden></p>
+      <footer class="dialog-actions"><button type="button" class="btn" data-back>Voltar</button><span class="spacer"></span><button class="btn primary">Enviar link</button></footer>
+    </form>`);
+  card.querySelector('[data-back]').addEventListener('click', () => loginScreen());
+  card.querySelector('[data-forgot-form]').addEventListener('submit', (event) => {
+    event.preventDefault();
+    const address = event.target.email.value.trim();
+    busy(event.target.querySelector('button.primary'), async () => {
+      await cloud.recoverPassword(address);
+      // Mesma mensagem com ou sem conta, para não revelar quem está cadastrado.
+      loginScreen(`Se ${address} tiver conta, o link chega em alguns minutos. Confira também o spam.`);
+    }).catch((error) => showError(card, error));
+  });
+}
+
+/** Voltou pelo link do e-mail: define a senha nova e entra. */
+function newPasswordScreen() {
+  const card = gate('Criar senha nova', `Conta <strong>${esc(cloud.userEmail() || 'sua')}</strong>. Escolha a senha nova.`, `
+    <form class="form" data-new-password>
+      <div class="form-grid">
+        <label class="field full"><span>Senha nova</span><input name="password" type="password" required autocomplete="new-password"></label>
+        <label class="field full"><span>Repita a senha nova</span><input name="confirm" type="password" required autocomplete="new-password"></label>
+      </div>
+      <p class="form-error" role="alert" hidden></p>
+      <footer class="dialog-actions"><span class="spacer"></span><button class="btn primary">Salvar e entrar</button></footer>
+    </form>`);
+  card.querySelector('[data-new-password]').addEventListener('submit', (event) => {
+    event.preventDefault();
+    const { password, confirm } = event.target;
+    if (password.value.length < 6) return showError(card, { message: 'Use pelo menos 6 caracteres.' });
+    if (password.value !== confirm.value) return showError(card, { message: 'As duas senhas não são iguais.' });
+    busy(event.target.querySelector('button.primary'), async () => {
+      await cloud.updatePassword(password.value);
+      toast('Senha nova salva.');
       await boot();
     }).catch((error) => showError(card, error));
   });
@@ -291,6 +337,11 @@ async function setupScreen() {
 }
 
 async function boot() {
+  if (cloud.enabled) {
+    const back = await cloud.takeAuthRedirect();
+    if (back === 'recovery') return newPasswordScreen();
+    if (back?.error) return loginScreen(back.error);
+  }
   const result = await load();
   if (result === 'login') return loginScreen();
   if (result === 'setup') return setupScreen();
@@ -328,6 +379,10 @@ window.addEventListener('hashchange', () => {
 
 function start() {
   const state = getState();
+  // Perfil ligado ao login manda: em qualquer aparelho, quem entrou é quem usa.
+  const uidNow = getMode() === 'cloud' && cloud.signedIn() ? cloud.userId() : '';
+  const mine = uidNow && state.people.find((p) => p.userId === uidNow);
+  if (mine && ui.me !== mine.id) { ui.me = mine.id; localStorage.setItem('monetizeo:me', mine.id); }
   if (!state.people.some((p) => p.id === ui.me)) ui.me = null;
   shell();
   renderShellState();
@@ -341,7 +396,16 @@ function start() {
       fields: [{ name: 'me', label: 'Eu sou', type: 'segmented', options: state.people.map((p) => ({ value: p.id, label: p.name })) }],
       values: { me: state.people[0].id },
       submitLabel: 'Continuar',
-      onSubmit(v) { context().setMe(v.me); },
+      onSubmit(v) {
+        // Na nuvem, a escolha já liga o perfil ao login (se ninguém tiver ligado ainda).
+        if (uidNow && !getState().people.find((p) => p.id === v.me)?.userId) {
+          update((s) => {
+            for (const p of s.people) if (p.userId === uidNow) { delete p.userId; delete p.loginEmail; }
+            Object.assign(s.people.find((p) => p.id === v.me), { userId: uidNow, loginEmail: cloud.userEmail() });
+          });
+        }
+        context().setMe(v.me);
+      },
     });
   }
 }

@@ -1,6 +1,7 @@
 // Ajustes: este aparelho, pessoas, contas e cartões, categorias e backup.
 
-import { downloadRescued, exportBackup, importBackup, openAccountForm, openCategoryForm, openPersonForm, openSplitForm } from '../actions.js';
+import { downloadRescued, exportBackup, importBackup, openAccountForm, openCategoryForm, openPasswordForm, openPersonForm, openSplitForm } from '../actions.js';
+import { avatar, displayName } from '../mascots.js';
 import { ACCOUNT_TYPES, GROUPS, accountBalance, isMoneyAccount } from '../model.js';
 import * as cloud from '../cloud.js';
 import { getHousehold, getMode, hasUnsynced, listRescued, removeRescued, signOut } from '../store.js';
@@ -13,7 +14,7 @@ const SPLIT = { equal: 'Meio a meio', income: 'Proporcional à renda', custom: '
 function deviceSection(ctx) {
   const { state } = ctx;
   const theme = ctx.theme;
-  const who = state.people.map((p) => `<button type="button" data-action="me" data-id="${esc(p.id)}" class="${ctx.me === p.id ? 'on' : ''}">${esc(p.name)}</button>`).join('');
+  const who = state.people.map((p) => `<button type="button" data-action="me" data-id="${esc(p.id)}" class="${ctx.me === p.id ? 'on' : ''}">${esc(displayName(p))}</button>`).join('');
   const themes = [['auto', 'Automático'], ['light', 'Claro'], ['dark', 'Escuro']].map(([v, l]) => `<button type="button" data-action="theme" data-value="${v}" class="${theme === v ? 'on' : ''}">${l}</button>`).join('');
   return `
     <section class="card">
@@ -25,10 +26,14 @@ function deviceSection(ctx) {
 
 function peopleSection(ctx) {
   const { state } = ctx;
-  const rows = state.people.map((p) => `<li class="row"><button type="button" class="row-body" data-action="person" data-id="${esc(p.id)}"><span class="row-main"><span class="row-title">${personDot(p)}${esc(p.name)}</span></span><span class="row-side"><small>editar</small></span></button></li>`).join('');
+  const uid = getMode() === 'cloud' && cloud.signedIn() ? cloud.userId() : '';
+  const rows = state.people.map((p) => {
+    const sub = [p.nickname && p.nickname !== p.name ? p.name : '', p.userId ? (p.userId === uid ? 'você · ligado ao seu login' : `ligado ao login ${p.loginEmail || ''}`) : ''].filter(Boolean).join(' · ');
+    return `<li class="row"><button type="button" class="row-body" data-action="person" data-id="${esc(p.id)}"><span class="row-main person-line">${avatar(p, 40)}<span><span class="row-title">${esc(displayName(p))}</span>${sub ? `<small class="row-sub">${esc(sub)}</small>` : ''}</span></span><span class="row-side"><small>editar perfil</small></span></button></li>`;
+  }).join('');
   return `
     <section class="card">
-      ${sectionHead('Casal')}
+      ${sectionHead('Perfis')}
       <ul class="rows">${rows}</ul>
       <div class="setting"><div><strong>Divisão das contas da casa</strong><small class="muted">${esc(SPLIT[state.split.mode])}</small></div><button type="button" class="btn small" data-action="split">Mudar</button></div>
     </section>`;
@@ -103,7 +108,7 @@ function dataSection() {
       ${sectionHead('Dados e conta')}
       <p class="muted">Os dados ficam na nuvem, protegidos pelo login, com uma cópia automática por dia. Qualquer aparelho em que vocês entrarem vê e edita a mesma casa.</p>
       <div class="setting"><div><strong>Código de convite</strong><small class="muted">Quem tem conta e digita este código entra na casa de vocês. Passe só para quem divide as contas.</small></div><code class="invite">${esc(getHousehold()?.invite || '')}</code></div>
-      <div class="setting"><div><strong>Conta</strong><small class="muted">${esc(cloud.userEmail())}</small></div><button type="button" class="btn small" data-action="logout">Sair</button></div>
+      <div class="setting"><div><strong>Conta</strong><small class="muted">${esc(cloud.userEmail())}</small></div><div class="button-row"><button type="button" class="btn small" data-action="password">Alterar senha</button><button type="button" class="btn small" data-action="logout">Sair</button></div></div>
       ${backup}
     </section>`;
   }
@@ -134,7 +139,8 @@ const find = (list, el) => list.find((x) => x.id === el.dataset.id);
 export const actions = {
   me: (ctx, el) => ctx.setMe(el.dataset.id),
   theme: (ctx, el) => ctx.setTheme(el.dataset.value),
-  person: (ctx, el) => openPersonForm(find(ctx.state.people, el)),
+  person: (ctx, el) => openPersonForm(find(ctx.state.people, el), (id) => ctx.setMe(id)),
+  password: () => openPasswordForm(),
   split: () => openSplitForm(),
   'new-account': () => openAccountForm(),
   account: (ctx, el) => openAccountForm(find(ctx.state.accounts, el)),

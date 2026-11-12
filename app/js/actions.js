@@ -7,7 +7,9 @@ import {
   loanStatus, monthItems, usageCount,
 } from './model.js';
 import { decodeOfx, importKey, invoiceImportChange, invoiceImportTargets, parseOfx, reviewCandidates, splitNewOfx, transferCandidates, withoutInvoicePayment } from './ofx.js';
-import { getState, replaceAll, undo, update } from './store.js';
+import * as cloud from './cloud.js';
+import { MASCOTS } from './mascots.js';
+import { getMode, getState, replaceAll, undo, update } from './store.js';
 import { confirmDialog, openDialog, openForm, toast } from './ui.js';
 import { addMonths, byId, esc, fmtDate, fmtMonth, money, norm, round2, today, uid, ymOf } from './util.js';
 
@@ -631,13 +633,66 @@ export function removeSettlement(id) {
 
 // --------------------------------------------------------------- cadastros
 
-export function openPersonForm(person) {
+/** Perfil: nome, apelido, cor, mascote e (na nuvem) ligação com o login. */
+export function openPersonForm(person, onLinked = () => {}) {
+  const online = getMode() === 'cloud' && cloud.signedIn();
+  const uid = online ? cloud.userId() : '';
+  const linkedToMe = !!uid && person.userId === uid;
+  const linkedToOther = !!person.userId && !linkedToMe;
+  const fields = [
+    { name: 'name', label: 'Nome', required: true },
+    { name: 'nickname', label: 'Apelido (opcional)', placeholder: 'Como aparece nas telas' },
+    { name: 'color', label: 'Cor', type: 'color' },
+    {
+      name: 'mascot', label: 'Mascote', type: 'picker',
+      options: [{ value: '', label: 'Inicial', html: `<b>${esc((person.nickname || person.name || '?').charAt(0).toUpperCase())}</b>` },
+        ...Object.entries(MASCOTS).map(([value, m]) => ({ value, label: m.name, html: m.svg }))],
+    },
+  ];
+  if (online && !linkedToOther) {
+    fields.push({ name: 'isMe', label: `Este perfil sou eu (ligar ao login ${cloud.userEmail()})`, type: 'checkbox', hint: 'Ao entrar com esse e-mail em qualquer aparelho, o app já sabe quem é.' });
+  }
   openForm({
-    title: 'Editar pessoa',
-    fields: [{ name: 'name', label: 'Nome', required: true }, { name: 'color', label: 'Cor', type: 'color' }],
-    values: person,
+    title: 'Perfil',
+    eyebrow: linkedToOther ? `Ligado ao login ${person.loginEmail || 'de outra pessoa'}` : '',
+    fields,
+    values: { ...person, nickname: person.nickname || '', mascot: person.mascot || '', isMe: linkedToMe },
     onSubmit(v) {
-      update((s) => Object.assign(s.people.find((p) => p.id === person.id), { name: v.name, color: v.color }));
+      update((s) => {
+        const target = s.people.find((p) => p.id === person.id);
+        Object.assign(target, { name: v.name, nickname: v.nickname || null, color: v.color, mascot: v.mascot || null });
+        if (!online || linkedToOther) return;
+        if (v.isMe) {
+          // Um login liga a um único perfil.
+          for (const p of s.people) if (p.userId === uid) { delete p.userId; delete p.loginEmail; }
+          Object.assign(target, { userId: uid, loginEmail: cloud.userEmail() });
+        } else if (linkedToMe) {
+          delete target.userId;
+          delete target.loginEmail;
+        }
+      });
+      if (v.isMe) onLinked(person.id);
+      toast('Perfil salvo.');
+    },
+  });
+}
+
+/** Troca de senha para quem já está logado. */
+export function openPasswordForm() {
+  openForm({
+    title: 'Alterar senha',
+    intro: `Conta ${esc(cloud.userEmail())}. A senha nova vale para todos os aparelhos.`,
+    fields: [
+      { name: 'password', label: 'Senha nova', type: 'password', required: true, full: true },
+      { name: 'confirm', label: 'Repita a senha nova', type: 'password', required: true, full: true },
+    ],
+    submitLabel: 'Alterar senha',
+    onSubmit(v) {
+      if (v.password.length < 6) return 'Use pelo menos 6 caracteres.';
+      if (v.password !== v.confirm) return 'As duas senhas não são iguais.';
+      cloud.updatePassword(v.password)
+        .then(() => toast('Senha alterada.'))
+        .catch((error) => toast(error.message || 'Não foi possível alterar a senha.'));
     },
   });
 }

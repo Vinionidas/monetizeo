@@ -2,6 +2,16 @@
 
 Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/).
 
+## [0.15.0] - 2026-11-12
+
+### Adicionado
+- **Perfis**: nome, apelido, cor e mascote (capivara, tatu, gato, coruja, tucano, jabuti, caramelo ou calango).
+  O apelido e o mascote aparecem nos Ajustes e no rodapé do menu.
+- Perfil ligado ao login: ao entrar com o próprio e-mail, o app já sabe quem está usando, em qualquer aparelho.
+  A escolha de "quem usa este aparelho" já faz essa ligação na primeira vez.
+- **Alterar senha** em Ajustes › Dados e conta.
+- **Esqueci minha senha** na tela de login: envia um link por e-mail para criar uma senha nova.
+
 ## [0.14.0] - 2026-11-12
 
 ### Adicionado

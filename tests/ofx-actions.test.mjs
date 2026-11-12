@@ -16,6 +16,7 @@ const stubs = {
     export const update = (fn) => { h.previous = structuredClone(h.state); fn(h.state); };
     export const undo = () => { h.state = h.previous; return true; };
     export const replaceAll = (state) => { h.state = state; };
+    export const getMode = () => 'local';
   `),
   './ui.js': moduleUrl(`
     const h = globalThis.__monetizeoActionTest;

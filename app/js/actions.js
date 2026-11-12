@@ -131,6 +131,15 @@ export function openEntryForm(ctx, entry = null, preset = {}) {
       toast(entry ? 'Lançamento atualizado.' : 'Lançamento adicionado.');
     },
     actions: entry ? [{
+      // Abre um lançamento novo igual a este, sem vínculo com extrato, recorrente ou parcela.
+      label: 'Duplicar',
+      run(close) {
+        close();
+        const { id: _id, importId: _i, importAccountId: _a, source: _s, transferGroup: _t, ...copy } = entry;
+        openEntryForm(ctx, null, { ...copy, description: `${entry.description} (cópia)` });
+        toast('Cópia aberta: ajuste o que mudar e salve.');
+      },
+    }, {
       label: 'Apagar', danger: true,
       run(close) {
         close();

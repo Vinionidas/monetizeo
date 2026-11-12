@@ -2,6 +2,12 @@
 
 Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/).
 
+## [0.14.0] - 2026-11-12
+
+### Adicionado
+- Botão **Duplicar** ao editar um lançamento: abre um lançamento novo já preenchido (sem vínculo com extrato,
+  recorrente ou parcela), para só ajustar o que muda.
+
 ## [0.13.1] - 2026-11-12
 
 ### Alterado

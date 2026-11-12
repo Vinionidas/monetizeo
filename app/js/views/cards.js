@@ -2,7 +2,7 @@
 // e o extrato do escolhido, com a importação do OFX feita ali mesmo.
 
 import { CARD_COLORS, importOfxFile, openAccountForm, openItem, payInvoice, payItem, reviewOfx, undoInvoicePayment } from '../actions.js';
-import { ACCOUNT_TYPES, accountBalance, cardCommitted, cardInvoice, isCard, isMoneyAccount, monthItems } from '../model.js';
+import { ACCOUNT_TYPES, accountBalance, cardCommitted, cardInvoice, installmentStatus, isCard, isMoneyAccount, monthItems } from '../model.js';
 import { bar, icon } from '../ui.js';
 import { addMonths, byId, diffDays, esc, fmtDate, fmtDay, fmtMonth, fmtMonthShort, fmtWeekday, money, round2, sum } from '../util.js';
 import { bigMoney, empty, findItem, itemRow, lookups, personDot, sectionHead } from './shared.js';
@@ -13,7 +13,10 @@ const colorOf = (account) => (CARD_COLORS[account.color] ? account.color : DEFAU
 // Conta escolhida nesta aba (fica escolhida ao trocar de mês).
 let selected = null;
 
-const visible = (state) => state.accounts.filter((a) => !a.archived && (isCard(a) || isMoneyAccount(a)));
+const visible = (state) => state.accounts.filter((a) => !a.archived);
+// Só cartão de crédito, conta de banco e benefício têm cartão de plástico de verdade.
+const isPlastic = (a) => isCard(a) || a.type === 'bank' || a.type === 'benefit';
+const isCredit = (a) => a.type === 'credit';
 
 /** "fecha em 18 dias · vence 05 dez", ou a data já passada. */
 function cycleText(invoice, today) {
@@ -58,11 +61,33 @@ function plastic(ctx, account, look) {
     </button>`;
 }
 
+/** Carteira e crediário: bloco simples, sem desenho de cartão. */
+function tile(ctx, account) {
+  let label;
+  let value;
+  if (isCredit(account)) {
+    const insts = ctx.state.installments.filter((i) => i.accountId === account.id);
+    label = 'Saldo devedor';
+    value = sum(insts, (i) => installmentStatus(ctx.state, i).remainingAmount);
+  } else {
+    label = 'Saldo hoje';
+    value = accountBalance(ctx.state, account, ctx.today);
+  }
+  return `
+    <button type="button" class="tile${account.id === selected ? ' on' : ''}" data-action="pick" data-id="${esc(account.id)}" aria-pressed="${account.id === selected}">
+      <span class="tile-icon">${icon(isCredit(account) ? 'list' : 'wallet', 18)}</span>
+      <span class="tile-main"><strong>${esc(account.name)}</strong><small>${esc(isCredit(account) ? 'Crediário / financiamento' : 'Carteira')}</small></span>
+      <span class="tile-side"><small>${label}</small><strong>${value === null ? '—' : esc(money(value))}</strong></span>
+    </button>`;
+}
+
 // --------------------------------------------------------------- resumo
 
 function summary(ctx, accounts) {
   const cards = accounts.filter(isCard);
   const money_ = accounts.filter(isMoneyAccount);
+  const credits = accounts.filter(isCredit);
+  const owed = sum(ctx.state.installments.filter((i) => credits.some((c) => c.id === i.accountId)), (i) => installmentStatus(ctx.state, i).remainingAmount);
   const invoices = sum(cards, (c) => cardInvoice(ctx.state, c, ctx.ym).total);
   const balances = money_.map((a) => accountBalance(ctx.state, a, ctx.today)).filter((b) => b !== null);
   return `
@@ -77,6 +102,11 @@ function summary(ctx, accounts) {
         ${bigMoney(sum(balances, (b) => b), sum(balances, (b) => b) < 0 ? 'neg' : '')}
         <small class="muted">saldo calculado hoje, pelos lançamentos</small>
       </section>
+      ${credits.length ? `<section class="card">
+        <p class="muted">Crediários e financiamentos</p>
+        ${bigMoney(owed)}
+        <small class="muted">saldo devedor das parcelas que faltam</small>
+      </section>` : ''}
     </div>`;
 }
 
@@ -185,6 +215,38 @@ function accountDetail(ctx, account, look) {
     </section>`;
 }
 
+// ---------------------------------------------- crediário e financiamento
+
+function creditDetail(ctx, account, look) {
+  const { state } = ctx;
+  const insts = state.installments.filter((i) => i.accountId === account.id);
+  const items = monthItems(state, ctx.ym).filter((i) => i.accountId === account.id && i.type === 'expense');
+  const due = sum(items.filter((i) => !i.paid), (i) => i.amount);
+  const rows = insts.map((inst) => {
+    const st = installmentStatus(state, inst);
+    const done = st.remaining === 0;
+    return `
+      <li class="row${done ? ' paid' : ''}"><a class="row-body" href="#/plano">
+        <span class="row-main"><span class="row-title">${esc(inst.description)} <span class="tag">${st.paidCount}/${inst.count}</span></span>
+        <span class="row-sub">${esc(money(inst.amount))} por mês${st.next ? ` · próxima em ${esc(fmtMonth(st.next.month))}` : ' · quitado'}</span></span>
+        <span class="row-side"><strong>${esc(money(st.remainingAmount))}</strong><small>falta</small></span>
+      </a>${bar(st.paidCount / inst.count)}</li>`;
+  }).join('');
+  return `
+    <section class="card account-detail c-${colorOf(account)}">
+      <header class="card-head">
+        <div><h2>${esc(account.name)}</h2><p class="muted">Crediário / financiamento · cada compra é um parcelamento</p></div>
+        <div class="button-row"><a class="btn small" href="#/plano">Novo parcelamento</a><button type="button" class="btn small" data-action="edit-account" data-id="${esc(account.id)}">Editar</button></div>
+      </header>
+      <div class="stats">
+        <div><small>A pagar em ${esc(fmtMonth(ctx.ym))}</small><strong>${esc(money(due))}</strong></div>
+        <div><small>Saldo devedor</small><strong>${esc(money(sum(insts, (i) => installmentStatus(state, i).remainingAmount)))}</strong></div>
+      </div>
+      ${items.length ? `<div><p class="eyebrow">Parcelas deste mês</p>${grouped(ctx, items, look)}</div>` : ''}
+      ${insts.length ? `<div><p class="eyebrow">Compras</p><ul class="rows credit-list">${rows}</ul></div>` : empty('Nenhuma compra', 'Cadastre cada compra do crediário em Planejamento › Novo parcelamento, escolhendo esta conta.')}
+    </section>`;
+}
+
 // ------------------------------------------------------------------ tela
 
 export function render(ctx) {
@@ -195,15 +257,18 @@ export function render(ctx) {
   if (!accounts.some((a) => a.id === selected)) selected = (accounts.find(isCard) || accounts[0]).id;
   const look = lookups(ctx.state);
   const account = accounts.find((a) => a.id === selected);
-  // Crédito primeiro, depois contas; dentro de cada grupo, a ordem do cadastro.
-  const ordered = [...accounts.filter(isCard), ...accounts.filter((a) => !isCard(a))];
+  const group = (title, list, draw, cls) => (list.length ? `<p class="eyebrow">${esc(title)}</p><div class="${cls}" role="group" aria-label="${esc(title)}">${list.map(draw).join('')}</div>` : '');
+  const others = accounts.filter((a) => !isPlastic(a));
+  const detail = isCard(account) ? cardDetail(ctx, account, look) : isCredit(account) ? creditDetail(ctx, account, look) : accountDetail(ctx, account, look);
   return `
     ${summary(ctx, accounts)}
     <section class="card plastic-strip-card">
       ${sectionHead('Seus cartões e contas', '<button type="button" class="btn small" data-action="new-account">' + icon('plus', 15) + ' Novo</button>')}
-      <div class="plastic-strip" role="group" aria-label="Escolha o cartão ou a conta">${ordered.map((a) => plastic(ctx, a, look)).join('')}</div>
+      ${group('Cartões de crédito', accounts.filter(isCard), (a) => plastic(ctx, a, look), 'plastic-strip')}
+      ${group('Contas e benefícios', accounts.filter((a) => isPlastic(a) && !isCard(a)), (a) => plastic(ctx, a, look), 'plastic-strip')}
+      ${group('Carteira, crediários e financiamentos', others, (a) => tile(ctx, a), 'tiles')}
     </section>
-    ${isCard(account) ? cardDetail(ctx, account, look) : accountDetail(ctx, account, look)}`;
+    ${detail}`;
 }
 
 export function mount(root, ctx) {

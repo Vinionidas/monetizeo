@@ -2,6 +2,13 @@
 
 Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/).
 
+## [0.11.0] - 2026-11-12
+
+### Alterado
+- Cartões e contas separados em grupos: cartões de crédito; contas e benefícios; carteira, crediários e financiamentos.
+  Dinheiro e crediário deixam de aparecer como cartão de plástico.
+- Crediário / financiamento tem tela própria: a pagar no mês, saldo devedor e cada compra parcelada com o progresso.
+
 ## [0.10.0] - 2026-11-12
 
 ### Adicionado

@@ -490,3 +490,19 @@ button.check:hover { border-color: var(--accent); background: var(--accent-soft)
 .pill.warn { background: var(--warn-soft); border-color: transparent; color: var(--warn); }
 .pill.info { background: color-mix(in srgb, var(--cat-3) 14%, transparent); border-color: transparent; color: var(--cat-3); }
 @media (max-width: 640px) { .plastic { width: 230px; } }
+.plastic-strip-card .eyebrow { margin: 4px 0 -6px; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 10px; }
+.tile {
+  display: flex; align-items: center; gap: 12px; padding: 12px 14px; text-align: left;
+  border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface-2); color: var(--text);
+  outline: 2px solid transparent; outline-offset: 2px;
+}
+.tile:hover { border-color: var(--line-strong); }
+.tile.on { outline-color: var(--accent); }
+.tile-icon { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 10px; background: var(--surface); border: 1px solid var(--line); color: var(--muted); flex: none; }
+.tile-main { flex: 1; min-width: 0; display: grid; }
+.tile-main strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tile-main small, .tile-side small { font-size: .76rem; color: var(--muted); }
+.tile-side { display: grid; text-align: right; }
+.credit-list .row { flex-wrap: wrap; }
+.credit-list .row .bar { flex-basis: 100%; max-width: none; margin: 0 6px 8px; }

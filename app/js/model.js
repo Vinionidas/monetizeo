@@ -14,7 +14,8 @@ export const ACCOUNT_TYPES = {
   cash: 'Dinheiro',
   benefit: 'Vale-alimentação / benefício',
   card: 'Cartão de crédito',
-  credit: 'Crediário / financiamento',
+  credit: 'Crediário',
+  financing: 'Financiamento',
 };
 
 export const GROUPS = { need: 'Necessidade', want: 'Desejo', invest: 'Reserva' };
@@ -46,6 +47,8 @@ export function normalize(state) {
     if (Array.isArray(base[key]) && !Array.isArray(out[key])) out[key] = [];
   }
   out.split = { ...base.split, ...(state.split || {}) };
+  // Até a 0.16, crediário e financiamento eram um tipo só: separa pelo nome.
+  out.accounts = out.accounts.map((a) => (a.type === 'credit' && /financ|empr[eé]stimo/i.test(a.name || '') ? { ...a, type: 'financing' } : a));
   return out;
 }
 

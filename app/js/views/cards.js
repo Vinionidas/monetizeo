@@ -1,13 +1,13 @@
 // Cartões e contas: um cartão visual por conta (crédito, banco, VA, dinheiro),
 // e o extrato do escolhido, com a importação do OFX feita ali mesmo.
 
-import { CARD_COLORS, importOfxFile, openAccountForm, openItem, payInvoice, payItem, reviewOfx, undoInvoicePayment } from '../actions.js';
+import { CARD_COLORS, importOfxFile, openAccountForm, openInstallmentForm, openItem, payInvoice, payItem, reviewOfx, undoInvoicePayment } from '../actions.js';
 import { ACCOUNT_TYPES, accountBalance, cardCommitted, cardInvoice, installmentStatus, isCard, isMoneyAccount, monthItems } from '../model.js';
 import { bar, icon } from '../ui.js';
 import { addMonths, byId, diffDays, esc, fmtDate, fmtDay, fmtMonth, fmtMonthShort, fmtWeekday, money, round2, sum } from '../util.js';
 import { bigMoney, empty, findItem, itemRow, lookups, personDot, sectionHead } from './shared.js';
 
-const DEFAULT_COLOR = { card: 'graphite', bank: 'blue', benefit: 'orange', cash: 'emerald', credit: 'purple' };
+const DEFAULT_COLOR = { card: 'graphite', bank: 'blue', benefit: 'orange', cash: 'emerald', credit: 'purple', financing: 'blue' };
 const colorOf = (account) => (CARD_COLORS[account.color] ? account.color : DEFAULT_COLOR[account.type] || 'graphite');
 
 // Conta escolhida nesta aba (fica escolhida ao trocar de mês).
@@ -16,7 +16,13 @@ let selected = null;
 const visible = (state) => state.accounts.filter((a) => !a.archived);
 // Só cartão de crédito, conta de banco e benefício têm cartão de plástico de verdade.
 const isPlastic = (a) => isCard(a) || a.type === 'bank' || a.type === 'benefit';
-const isCredit = (a) => a.type === 'credit';
+// Crediário (compras parceladas na loja) e financiamento (contrato com prestações):
+// os dois são dívidas pagas em parcelas, com a mesma tela, mas cada um com seu nome.
+const isCredit = (a) => a.type === 'credit' || a.type === 'financing';
+const WORDS = {
+  credit: { items: 'Compras', item: 'compra', add: 'Nova compra no crediário', hint: 'cada compra parcelada aparece aqui' },
+  financing: { items: 'Contratos', item: 'contrato', add: 'Novo financiamento', hint: 'prestações do contrato' },
+};
 
 /** "fecha em 18 dias · vence 05 dez", ou a data já passada. */
 function cycleText(invoice, today) {
@@ -76,7 +82,7 @@ function tile(ctx, account) {
   return `
     <button type="button" class="tile${account.id === selected ? ' on' : ''}" data-action="pick" data-id="${esc(account.id)}" aria-pressed="${account.id === selected}">
       <span class="tile-icon">${icon(isCredit(account) ? 'list' : 'wallet', 18)}</span>
-      <span class="tile-main"><strong>${esc(account.name)}</strong><small>${esc(isCredit(account) ? 'Crediário / financiamento' : 'Carteira')}</small></span>
+      <span class="tile-main"><strong>${esc(account.name)}</strong><small>${esc(isCredit(account) ? ACCOUNT_TYPES[account.type] : 'Carteira')}</small></span>
       <span class="tile-side"><small>${label}</small><strong>${value === null ? '—' : esc(money(value))}</strong></span>
     </button>`;
 }
@@ -92,11 +98,11 @@ function summary(ctx, accounts) {
   const balances = money_.map((a) => accountBalance(ctx.state, a, ctx.today)).filter((b) => b !== null);
   return `
     <div class="cards-summary">
-      <section class="card">
+      ${cards.length ? `<section class="card">
         <p class="muted">Cartões de crédito</p>
         ${bigMoney(invoices)}
         <small class="muted">total das faturas que vencem em ${esc(fmtMonth(ctx.ym))}</small>
-      </section>
+      </section>` : ''}
       <section class="card">
         <p class="muted">Contas e benefícios</p>
         ${bigMoney(sum(balances, (b) => b), sum(balances, (b) => b) < 0 ? 'neg' : '')}
@@ -219,9 +225,14 @@ function accountDetail(ctx, account, look) {
 
 function creditDetail(ctx, account, look) {
   const { state } = ctx;
+  const words = WORDS[account.type] || WORDS.credit;
   const insts = state.installments.filter((i) => i.accountId === account.id);
-  const items = monthItems(state, ctx.ym).filter((i) => i.accountId === account.id && i.type === 'expense');
+  const ids = new Set(insts.map((i) => i.id));
+  // A parcela paga sai da conta de onde veio o dinheiro (ex.: Inter), mas continua sendo deste crediário.
+  const ofThis = (i) => i.accountId === account.id || (i.kind === 'installment' && ids.has(i.refId)) || (i.source?.kind === 'installment' && ids.has(i.source.id));
+  const items = monthItems(state, ctx.ym).filter((i) => i.type === 'expense' && ofThis(i));
   const due = sum(items.filter((i) => !i.paid), (i) => i.amount);
+  const monthTotal = sum(items, (i) => i.amount);
   const rows = insts.map((inst) => {
     const st = installmentStatus(state, inst);
     const done = st.remaining === 0;
@@ -235,15 +246,15 @@ function creditDetail(ctx, account, look) {
   return `
     <section class="card account-detail c-${colorOf(account)}">
       <header class="card-head">
-        <div><h2>${esc(account.name)}</h2><p class="muted">Crediário / financiamento · cada compra é um parcelamento</p></div>
-        <div class="button-row"><a class="btn small" href="#/plano">Novo parcelamento</a><button type="button" class="btn small" data-action="edit-account" data-id="${esc(account.id)}">Editar</button></div>
+        <div><h2>${esc(account.name)}</h2><p class="muted">${esc(ACCOUNT_TYPES[account.type])} · ${esc(words.hint)}</p></div>
+        <div class="button-row"><button type="button" class="btn small" data-action="new-installment" data-id="${esc(account.id)}">${esc(words.add)}</button><button type="button" class="btn small" data-action="edit-account" data-id="${esc(account.id)}">Editar</button></div>
       </header>
       <div class="stats">
-        <div><small>A pagar em ${esc(fmtMonth(ctx.ym))}</small><strong>${esc(money(due))}</strong></div>
+        <div><small>${account.type === 'financing' ? 'Prestação' : 'Parcelas'} de ${esc(fmtMonth(ctx.ym))}</small><strong>${esc(money(monthTotal))}</strong><small class="${due > 0 ? '' : 'pos'}">${monthTotal <= 0 ? 'nada neste mês' : due > 0 ? `${esc(money(due))} em aberto` : 'paga'}</small></div>
         <div><small>Saldo devedor</small><strong>${esc(money(sum(insts, (i) => installmentStatus(state, i).remainingAmount)))}</strong></div>
       </div>
-      ${items.length ? `<div><p class="eyebrow">Parcelas deste mês</p>${grouped(ctx, items, look)}</div>` : ''}
-      ${insts.length ? `<div><p class="eyebrow">Compras</p><ul class="rows credit-list">${rows}</ul></div>` : empty('Nenhuma compra', 'Cadastre cada compra do crediário em Planejamento › Novo parcelamento, escolhendo esta conta.')}
+      ${items.length ? `<div><p class="eyebrow">${account.type === 'financing' ? 'Prestação deste mês' : 'Parcelas deste mês'}</p>${grouped(ctx, items, look)}</div>` : ''}
+      ${insts.length ? `<div><p class="eyebrow">${esc(words.items)}</p><ul class="rows credit-list">${rows}</ul></div>` : empty(words.item === 'compra' ? 'Nenhuma compra ainda' : 'Nenhum contrato ainda', `Use "${words.add}" para cadastrar valor da parcela, quantidade e primeiro vencimento.`)}
     </section>`;
 }
 
@@ -291,6 +302,7 @@ export const actions = {
   review: (ctx, el) => { const row = ctx.state.ofxPending.find((r) => r.id === el.dataset.id); if (row) reviewOfx(ctx, row); },
   'new-account': () => openAccountForm(null, 'card'),
   'edit-account': (ctx, el) => openAccountForm(accountOf(ctx, el)),
+  'new-installment': (ctx, el) => openInstallmentForm(ctx, null, { accountId: el.dataset.id }),
   'pay-invoice': (ctx, el) => { const card = accountOf(ctx, el); payInvoice(ctx, card, cardInvoice(ctx.state, card, ctx.ym)); },
   'unpay-invoice': (ctx, el) => { const card = accountOf(ctx, el); undoInvoicePayment(card, cardInvoice(ctx.state, card, ctx.ym)); },
 };

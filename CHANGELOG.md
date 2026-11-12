@@ -2,6 +2,18 @@
 
 Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/).
 
+## [0.17.0] - 2026-11-12
+
+### Alterado
+- **Crediário** e **Financiamento** viraram tipos de conta separados (antes "Crediário / financiamento"). Contas antigas
+  com "financ" ou "empréstimo" no nome passam sozinhas para Financiamento. Financiamento fala em contratos e
+  prestações; crediário, em compras e parcelas. Botão para cadastrar direto na conta.
+- A parcela do mês no crediário/financiamento aparece mesmo quando foi paga por outra conta (ex.: boleto pago pelo Inter).
+
+### Corrigido
+- No celular, o chip do cartão ficava por cima do nome. A barra de rolagem cinza dos cartões sumiu.
+- O resumo "Cartões de crédito" só aparece quando há cartão de crédito ativo.
+
 ## [0.16.1] - 2026-11-12
 
 ### Alterado

@@ -452,11 +452,12 @@ button.check:hover { border-color: var(--accent); background: var(--accent-soft)
 /* ---------------------------------------------------- cartões e contas */
 .cards-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
 .cards-summary .card { gap: 4px; }
-.plastic-strip { display: flex; gap: 14px; overflow-x: auto; padding: 8px 8px 12px; margin: -8px -8px 0; scroll-snap-type: x proximity; }
+.plastic-strip { display: flex; gap: 14px; overflow-x: auto; padding: 8px 8px 12px; margin: -8px -8px 0; scroll-snap-type: x proximity; scrollbar-width: none; }
+.plastic-strip::-webkit-scrollbar { display: none; }
 .plastic {
   --p1: #2b3132; --p2: #101414;
-  flex: none; width: 264px; aspect-ratio: 1.6; scroll-snap-align: start; position: relative;
-  display: grid; grid-template-rows: auto auto 1fr auto auto; align-content: stretch; gap: 2px;
+  flex: none; width: 264px; min-height: 165px; scroll-snap-align: start; position: relative;
+  display: grid; grid-template-rows: auto 1fr auto auto auto; gap: 2px;
   padding: 14px 16px; border: 0; border-radius: 14px; text-align: left; color: #fff;
   background: radial-gradient(120% 140% at 100% 0%, rgba(255,255,255,.16), transparent 55%), linear-gradient(135deg, var(--p1), var(--p2));
   box-shadow: 0 1px 2px rgba(0,0,0,.12), 0 8px 20px -12px rgba(0,0,0,.45);
@@ -468,7 +469,9 @@ button.check:hover { border-color: var(--accent); background: var(--accent-soft)
 .plastic-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .plastic-type { font-size: .72rem; letter-spacing: .04em; text-transform: uppercase; opacity: .8; }
 .plastic-badge { min-width: 22px; height: 22px; padding: 0 6px; border-radius: 999px; background: #fff; color: #111; font-size: .75rem; font-weight: 700; display: grid; place-items: center; }
-.plastic-chip { width: 34px; height: 25px; margin-top: 8px; border-radius: 6px; background: linear-gradient(135deg, #f1d58a, #b8913d); opacity: .9; }
+.plastic-chip { position: absolute; top: 44px; right: 16px; width: 34px; height: 25px; border-radius: 6px; background: linear-gradient(135deg, #f1d58a, #b8913d); opacity: .9; }
+.plastic-top { padding-right: 0; }
+.plastic-name { margin-top: 18px; padding-right: 44px; }
 .plastic-name { align-self: end; font-weight: 700; font-size: 1.05rem; line-height: 1.2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .plastic-owner { font-size: .78rem; opacity: .75; }
 .plastic-foot { display: flex; justify-content: space-between; gap: 10px; margin-top: 6px; }
@@ -489,7 +492,7 @@ button.check:hover { border-color: var(--accent); background: var(--accent-soft)
 .queue-inline { display: grid; gap: 6px; padding: 12px; border-radius: var(--radius-sm); background: var(--warn-soft); }
 .pill.warn { background: var(--warn-soft); border-color: transparent; color: var(--warn); }
 .pill.info { background: color-mix(in srgb, var(--cat-3) 14%, transparent); border-color: transparent; color: var(--cat-3); }
-@media (max-width: 640px) { .plastic { width: 230px; } }
+@media (max-width: 640px) { .plastic { width: 236px; min-height: 150px; } }
 .plastic-strip-card .eyebrow { margin: 4px 0 -6px; }
 .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 10px; }
 .tile {

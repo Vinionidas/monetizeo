@@ -342,12 +342,15 @@ export function openRecurringForm(ctx, recurring = null) {
 
 // ----------------------------------------------------------- parcelamentos
 
-export function openInstallmentForm(ctx, inst = null) {
+export function openInstallmentForm(ctx, inst = null, preset = {}) {
   const state = getState();
-  const base = inst || { description: '', amount: null, count: null, first: ctx.today, paidBefore: 0, categoryId: null, accountId: state.accounts.find((a) => isCard(a))?.id || '', personId: ctx.me, scope: 'personal' };
+  const base = inst || { description: '', amount: null, count: null, first: ctx.today, paidBefore: 0, categoryId: null, accountId: state.accounts.find((a) => isCard(a))?.id || '', personId: ctx.me, scope: 'personal', ...preset };
+  // O nome segue a conta: financiamento tem prestações; crediário e cartão, parcelas.
+  const kind = state.accounts.find((a) => a.id === base.accountId)?.type;
+  const noun = kind === 'financing' ? 'financiamento' : kind === 'credit' ? 'compra no crediário' : 'parcelamento';
   openForm({
-    title: inst ? 'Editar parcelamento' : 'Novo parcelamento',
-    eyebrow: 'Compra parcelada ou financiamento',
+    title: inst ? `Editar ${noun}` : `Nov${kind === 'credit' ? 'a' : 'o'} ${noun}`,
+    eyebrow: kind === 'financing' ? 'Contrato com prestações mensais' : kind === 'credit' ? 'Compra parcelada na loja (carnê ou boleto)' : 'Compra parcelada no cartão',
     fields: [
       { name: 'description', label: 'Descrição', required: true, full: true },
       { name: 'amount', label: 'Valor da parcela', type: 'money', required: true },
@@ -355,7 +358,7 @@ export function openInstallmentForm(ctx, inst = null) {
       { name: 'first', label: 'Vencimento da 1ª parcela', type: 'date', required: true },
       { name: 'paidBefore', label: 'Parcelas já pagas antes do app', type: 'number', min: 0, hint: 'Elas contam como pagas sem criar lançamentos.' },
       { name: 'categoryId', label: 'Categoria', type: 'select', options: categoryOptions(state, 'expense', base.categoryId) },
-      { name: 'accountId', label: 'Cartão ou crediário', type: 'select', options: accountOptions(state, base.accountId) },
+      { name: 'accountId', label: 'Cartão, crediário ou financiamento', type: 'select', options: accountOptions(state, base.accountId) },
       { name: 'personId', label: 'Quem', type: 'select', options: personOptions(state) },
       { name: 'scope', label: 'Essa despesa é', type: 'segmented', options: SCOPE_OPTIONS },
     ],

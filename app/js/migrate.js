@@ -17,7 +17,8 @@ export const isLegacy = (data) => !!data && !data.schema && Array.isArray(data.e
 function guessAccountType(name) {
   const n = norm(name);
   if (/cartao/.test(n)) return 'card';
-  if (/crediario|financ|emprestimo|carne/.test(n)) return 'credit';
+  if (/financ|emprestimo/.test(n)) return 'financing';
+  if (/crediario|carne/.test(n)) return 'credit';
   if (/carteira|dinheiro|especie/.test(n)) return 'cash';
   return 'bank';
 }

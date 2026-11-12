@@ -40,6 +40,24 @@ export const FUN_ITEMS = [
   [15, 'açaí de 300 ml', 'açaís de 300 ml', () => 'Com granola e leite em pó. Sem moderação.'],
   [25, 'pizza pequena', 'pizzas pequenas', () => 'Sexta-feira mora em você agora.'],
   [70, 'kg de picanha', 'kg de picanha', () => 'Churrasco numa terça-feira, porque pode.'],
+  [0.1, 'grampo de cabelo', 'grampos de cabelo', () => 'Some um por dia mesmo, então tá na conta.'],
+  [0.3, 'prego', 'pregos', (q) => (q >= 10 ? 'Dá pra pendurar todos os quadros que vocês nunca penduraram.' : 'Pendura aquele quadro, vai.')],
+  [0.6, 'bala de café', 'balas de café', () => 'Cafeína em formato portátil.'],
+  [1.2, 'pacote de miojo (meio)', 'pacotes de miojo (meio)', () => 'Tempero inteiro, claro. Ninguém é de ferro.'],
+  [1.5, 'limão', 'limões', (q) => (q >= 6 ? 'Quando a vida der limões, faça uma caipirinha.' : 'Suco, tempero ou chá pra gripe.')],
+  [2.5, 'pacote de miojo', 'pacotes de miojo', () => 'Três minutos de felicidade, comprovado pela ciência.'],
+  [3, 'bolo de pote (fatia)', 'fatias de bolo de pote', () => 'Doce com colher: o auge da civilização.'],
+  [4.5, 'pacote de bolacha recheada', 'pacotes de bolacha recheada', () => 'Abre e come o recheio primeiro, sem julgamento.'],
+  [5, 'dúzia de laranja', 'dúzias de laranja', () => 'Vitamina C pra espantar até boleto.'],
+  [5.5, 'cuscuz completo no ponto', 'cuscuz completos', () => 'Com carne de sol, porque a gente merece.'],
+  [6.5, 'sacolé de açaí', 'sacolés de açaí', () => 'Açaí de pobre é açaí também.'],
+  [7.5, 'litro de leite', 'litros de leite', () => 'Pro café com leite e pro cuscuz molhado.'],
+  [9, 'pacote de café de 250 g', 'pacotes de café de 250 g', () => 'Combustível oficial de segunda a sexta.'],
+  [11, 'sorvete de massa (pote pequeno)', 'potes de sorvete de massa', () => 'Assistindo série, debaixo do ventilador.'],
+  [13, 'baião de dois (marmita)', 'marmitas de baião de dois', () => 'Arroz, feijão e felicidade no mesmo pote.'],
+  [20, 'rodízio de pastel (meio)', 'rodízios de pastel (meio)', () => 'Sai rolando, mas sai feliz.'],
+  [35, 'pizza grande', 'pizzas grandes', () => 'Metade calabresa, metade frango com catupiry. Clássico.'],
+  [50, 'tanque cheio da Yamaha', 'tanques cheios da Yamaha', () => 'Estrada liberada. Vruum ao quadrado.'],
 ];
 
 const TEMPLATES = [
@@ -49,6 +67,10 @@ const TEMPLATES = [
   (what) => `Hoje você é rico em ${what}.`,
   (what) => `Ostentação diária liberada: ${what}.`,
   (what) => `Sua sobra diária, convertida: ${what}.`,
+  (what) => `Patrocinador oficial do seu dia: ${what}.`,
+  (what) => `Relatório financeiro: ${what} por dia, e olhe lá.`,
+  (what) => `O economista dentro de você recomenda ${what} por dia.`,
+  (what) => `Se fosse moeda, você teria ${what} por dia.`,
 ];
 
 const NEGATIVE = [
@@ -57,13 +79,18 @@ const NEGATIVE = [
   'Modo sobrevivência ativado: água da torneira é gourmet.',
   'O saldo foi passear e esqueceu de voltar. Hora de cortar alguma coisa.',
   'Se dinheiro fosse bateria, o celular já tinha desligado.',
-];
+  'O boleto venceu a batalha, mas a guerra ainda não acabou.',
+  'Hoje o lanche é o cheiro da padaria quando passar na frente.',
+  'Conta no vermelho: até o Guaraná Jesus ficou mais rosa de vergonha.',
+  'Hora de vender a ideia de um churrasco onde cada um leva o seu.',
+]; 
 
 const TINY = [
   'Dá pra comprar uma bala e olhar pra ela com carinho.',
   'Isso compra um pensamento positivo. Usado.',
   'Rico em experiências, pobre em centavos.',
-];
+  'Dá pra comprar um grampo de cabelo e torcer pra não perder.',
+]; 
 
 /**
  * Frase do dia. `perDay` pode ser null (sobra zerada ou negativa).

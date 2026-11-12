@@ -2,6 +2,11 @@
 
 Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/).
 
+## [0.13.1] - 2026-11-12
+
+### Alterado
+- Mais comparações bobas: 52 itens, 10 começos de frase e mais frases para mês no vermelho.
+
 ## [0.13.0] - 2026-11-12
 
 ### Alterado

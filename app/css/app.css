@@ -506,3 +506,6 @@ button.check:hover { border-color: var(--accent); background: var(--accent-soft)
 .tile-side { display: grid; text-align: right; }
 .credit-list .row { flex-wrap: wrap; }
 .credit-list .row .bar { flex-basis: 100%; max-width: none; margin: 0 6px 8px; }
+.daily .fun { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.daily .fun span { font-weight: 550; }
+.icon-btn.small { width: 28px; height: 28px; flex: none; }

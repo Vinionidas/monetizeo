@@ -420,3 +420,16 @@ test('transferência marcada à mão fica fora da sobra e do gasto', () => {
   assert.equal(summarize(monthItems(s, '2026-03')).expense, 1550);
   assert.equal(accountBalance(s, s.accounts[0]), -200);
 });
+
+test('frase boba da sobra: quantidade inteira, muda com o sorteio, piada no negativo', async () => {
+  const { funLine, FUN_ITEMS } = await import('../app/js/fun.js');
+  for (let seed = 0; seed < 60; seed++) {
+    const line = funLine(1.92, seed);
+    assert.match(line, /\d+ .+\. .+/);
+  }
+  assert.notEqual(funLine(1.92, 1), funLine(1.92, 2));
+  assert.ok(funLine(null, 3).length > 10);
+  assert.ok(funLine(-50, 0).length > 10);
+  assert.ok(funLine(0.1, 0).length > 10);
+  assert.ok(FUN_ITEMS.length >= 20);
+});

@@ -3,13 +3,16 @@
 
 import { exportBackup, openAccountForm, openBalanceSetup, openItem, payItem, receiveLoan } from '../actions.js';
 import { accountBalance, accountsNeedingBalance, cardInvoice, dailyAllowance, expensesByCategory, houseSplit, isCard, isMoneyAccount, isOverdue, leftover, monthItems, openLoans, projection, splitShares, budgetStatus } from '../model.js';
-import { bar } from '../ui.js';
+import { bar, icon } from '../ui.js';
+import { daySeed, funLine } from '../fun.js';
 import { byId, diffDays, esc, fmtDate, fmtDay, fmtMonth, fmtMonthShort, money, percent, sum } from '../util.js';
 import { getMode } from '../store.js';
 import { bigMoney, empty, findItem, itemRow, lookups, personDot, sectionHead } from './shared.js';
 
 // Dia de vencimento escolhido em "Contas a pagar" ('' = todas).
 let dueFilter = '';
+// Quantas vezes "outra" foi apertado (soma ao sorteio do dia).
+let funOffset = 0;
 
 function balances(ctx) {
   const accounts = ctx.state.accounts.filter(isMoneyAccount);
@@ -72,9 +75,12 @@ function hero(ctx, items) {
       ${state.people.map((p) => `<button type="button" data-action="view" data-person="${esc(p.id)}" class="${person?.id === p.id ? 'on' : ''}">${esc(p.name)}</button>`).join('')}
     </div>` : '';
   const daily = dailyAllowance(lo.left, ctx.today, ctx.ym);
-  const dailyLine = daily
-    ? `<p class="daily">No planejamento, a sobra prevista equivale a <strong>${esc(money(daily.perDay))} por dia</strong> ${daily.days === 1 ? 'hoje, último dia do mês' : `nos ${daily.days} dias que faltam`}. Inclui receitas ainda previstas; não representa dinheiro disponível hoje.</p>`
-    : '';
+  const isNow = ctx.ym === ctx.currentYm;
+  const fun = isNow ? funLine(daily?.perDay ?? null, daySeed(ctx.today) + funOffset) : '';
+  const dailyLine = isNow ? `
+    <div class="daily">
+      <p class="fun"><span>${esc(fun)}</span><button type="button" class="icon-btn small" data-action="fun-next" title="Outra" aria-label="Outra frase">${icon('refresh', 15)}</button></p>
+    </div>` : '';
   const legend = (cls, label, value, share) => `<div class="legend-item"><span><i class="swatch ${cls}"></i>${esc(label)}</span><strong>${esc(money(value))}</strong><small>${share}</small></div>`;
   return `
     <section class="card hero">
@@ -282,6 +288,7 @@ export function render(ctx) {
 }
 
 export const actions = {
+  'fun-next': (ctx) => { funOffset++; ctx.rerender(); },
   'new-account': () => openAccountForm(),
   balance: (ctx, el) => { const account = ctx.state.accounts.find((a) => a.id === el.dataset.id); if (account) openBalanceSetup(ctx, account); },
   backup: (ctx) => { exportBackup(); ctx.rerender(); },

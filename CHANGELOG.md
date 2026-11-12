@@ -2,6 +2,12 @@
 
 Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/).
 
+## [0.13.0] - 2026-11-12
+
+### Alterado
+- A sobra por dia na visão geral virou uma comparação boba que muda todo dia ("Dá pra comprar 3 pirulitos por dia...").
+  O botão ao lado sorteia outra. Mês no vermelho também ganha frase própria.
+
 ## [0.12.0] - 2026-11-12
 
 ### Adicionado

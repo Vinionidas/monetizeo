@@ -3,7 +3,9 @@
 import { downloadRescued, exportBackup, importBackup, openAccountForm, openCategoryForm, openPasswordForm, openPersonForm, openSplitForm } from '../actions.js';
 import { avatar, displayName } from '../mascots.js';
 import { ACCOUNT_TYPES, GROUPS, accountBalance, isMoneyAccount } from '../model.js';
+import { hasAssistantConsent, setAssistantConsent } from '../assistant-consent.js';
 import * as cloud from '../cloud.js';
+import { clearConversation } from './assistant.js';
 import { getHousehold, getMode, hasUnsynced, listRescued, removeRescued, signOut } from '../store.js';
 import { confirmDialog } from '../ui.js';
 import { esc, fmtDate, money } from '../util.js';
@@ -122,15 +124,34 @@ function dataSection() {
     </section>`;
 }
 
-export function render(ctx) {
-  return `<div class="grid">${deviceSection(ctx)}${peopleSection(ctx)}${accountsSection(ctx)}${categoriesSection(ctx)}${dataSection()}${rescuedSection()}</div>`;
+function assistantSection() {
+  const cloudReady = getMode() === 'cloud' && cloud.signedIn();
+  const consented = cloudReady && hasAssistantConsent();
+  return `
+    <section class="card wide">
+      ${sectionHead('Moneti-bot')}
+      <p class="muted">Ao conversar, sua pergunta e um resumo financeiro agregado do mês atual e do anterior são enviados ao Google Gemini. O resumo inclui valores e nomes de categorias; não envia nomes de pessoas ou contas nem descrições de compras. No nível gratuito, o Google pode usar o conteúdo para melhorar os produtos.</p>
+      ${!cloudReady ? '<p class="muted">O chat funciona apenas com a casa conectada à nuvem e uma conta ativa.</p>' : consented
+        ? '<div class="setting"><div><strong>Conectado neste aparelho</strong><small class="muted">O Moneti-bot pode enviar perguntas e resumos financeiros ao Gemini.</small></div><button type="button" class="btn small" data-action="assistant-disconnect">Desconectar</button></div>'
+        : `
+          <label class="assistant-settings-consent"><input type="checkbox" data-assistant-consent> Li e concordo com o envio desses dados para responder às minhas perguntas.</label>
+          <button type="button" class="btn primary" data-action="assistant-authorize" disabled>Ativar Moneti-bot</button>`}
+      <p class="hint">As mensagens ficam somente na memória desta página e desaparecem ao recarregar. O Moneti-bot só consulta os dados: não cria nem altera lançamentos.</p>
+    </section>`;
 }
 
-export function mount(root) {
+export function render(ctx) {
+  return `<div class="grid">${deviceSection(ctx)}${peopleSection(ctx)}${assistantSection()}${accountsSection(ctx)}${categoriesSection(ctx)}${dataSection()}${rescuedSection()}</div>`;
+}
+
+export function mount(root, ctx) {
   root.querySelector('[data-backup]')?.addEventListener('change', (event) => {
     const file = event.target.files[0];
     event.target.value = '';
     if (file) importBackup(file);
+  });
+  root.querySelector('[data-assistant-consent]')?.addEventListener('change', (event) => {
+    root.querySelector('[data-action="assistant-authorize"]').disabled = !event.target.checked;
   });
 }
 
@@ -146,6 +167,16 @@ export const actions = {
   account: (ctx, el) => openAccountForm(find(ctx.state.accounts, el)),
   'new-category': () => openCategoryForm(),
   category: (ctx, el) => openCategoryForm(find(ctx.state.categories, el)),
+  'assistant-authorize': (ctx, el) => {
+    if (!el.parentElement.querySelector('[data-assistant-consent]')?.checked) return;
+    setAssistantConsent(true);
+    ctx.rerender();
+  },
+  'assistant-disconnect': (ctx) => {
+    setAssistantConsent(false);
+    clearConversation();
+    ctx.rerender();
+  },
   export: () => exportBackup(),
   logout: async () => {
     if (hasUnsynced()) {

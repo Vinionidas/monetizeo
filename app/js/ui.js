@@ -165,7 +165,7 @@ function readForm(form, fields) {
  * onSubmit(values) pode devolver uma mensagem de erro (string) para manter o diálogo aberto.
  * actions: botões extras [{ label, danger, run(close) }].
  */
-export function openForm({ title, eyebrow, fields, values = {}, submitLabel = 'Salvar', onSubmit, actions = [], intro = '' }) {
+export function openForm({ title, eyebrow, fields, values = {}, submitLabel = 'Salvar', onSubmit, actions = [], intro = '', autoFocus = true }) {
   const body = `
     <form class="form" novalidate>
       ${intro ? `<p class="dialog-text">${intro}</p>` : ''}
@@ -202,7 +202,7 @@ export function openForm({ title, eyebrow, fields, values = {}, submitLabel = 'S
       form.addEventListener('input', refresh);
       form.addEventListener('change', refresh);
       refresh();
-      form.querySelector('input:not([type=radio]):not([type=checkbox]), select')?.focus();
+      if (autoFocus) form.querySelector('input:not([type=radio]):not([type=checkbox]), select')?.focus();
 
       form.addEventListener('submit', (event) => {
         event.preventDefault();

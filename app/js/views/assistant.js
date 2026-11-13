@@ -75,7 +75,7 @@ export function render(ctx) {
           <button type="submit" class="btn primary" ${!consented ? 'disabled' : ''}>Perguntar</button>
         </form>
         <p class="muted assistant-footnote">A conversa fica apenas na memória desta página e desaparece ao recarregar. O assistente não altera seus dados.</p>
-      `}`}
+      `}
     </section>`;
 }
 

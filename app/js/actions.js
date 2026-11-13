@@ -755,6 +755,7 @@ export function openAccountForm(account = null, newType = 'bank') {
       });
     },
     actions: account ? [archiveAction('accounts', 'accountId', account)] : [],
+    autoFocus: false,
   });
 }
 

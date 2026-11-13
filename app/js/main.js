@@ -150,6 +150,7 @@ function renderView(enter = false) {
   root.querySelector('[data-title]').textContent = isMore ? 'Mais' : route.title;
   root.querySelector('[data-month-label]').textContent = fmtMonth(ui.ym);
   root.querySelector('[data-month-switch]').hidden = isMore || NO_MONTH.has(name);
+  root.querySelector('.fab').hidden = name === 'assistente';
   root.querySelectorAll('[data-nav]').forEach((a) => {
     const target = a.dataset.nav;
     const on = isMore ? target === 'mais' : target === name || (target === 'mais' && !MOBILE_TABS.includes(name));

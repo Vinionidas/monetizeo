@@ -7,6 +7,7 @@ import { createCloudHousehold, getMode, getState, getStatus, hasData, joinCloudH
 import { icon, openForm, toast } from './ui.js';
 import { addMonths, esc, fmtMonth, today, uid, ymOf } from './util.js';
 import * as cards from './views/cards.js';
+import * as assistant from './views/assistant.js';
 import * as entries from './views/entries.js';
 import * as goals from './views/goals.js';
 import * as house from './views/house.js';
@@ -23,6 +24,7 @@ const ROUTES = {
   casa: { title: 'Casa', icon: 'house', view: house, short: 'Casa' },
   plano: { title: 'Planejamento', icon: 'chart', view: plan, short: 'Plano' },
   metas: { title: 'Metas e dívidas', icon: 'target', view: goals, short: 'Metas' },
+  assistente: { title: 'Pergunte ao Monetizeo', icon: 'chat', view: assistant, short: 'Assistente' },
   ajustes: { title: 'Ajustes', icon: 'gear', view: settings, short: 'Ajustes' },
 };
 const MOBILE_TABS = ['inicio', 'lancamentos', 'cartoes', 'casa'];
@@ -79,7 +81,7 @@ function shell() {
         <p class="nav-label">Mês</p>
         ${['inicio', 'lancamentos', 'cartoes', 'casa'].map(link).join('')}
         <p class="nav-label">Organização</p>
-        ${['plano', 'metas', 'ajustes'].map(link).join('')}
+        ${['plano', 'metas', 'assistente', 'ajustes'].map(link).join('')}
       </nav>
       <div class="sidebar-foot" data-foot></div>
     </aside>
@@ -115,7 +117,7 @@ function renderShellState() {
 
 function moreView() {
   const link = (name) => `<a class="line" href="#/${name}"><span>${icon(ROUTES[name].icon)}<strong>${esc(ROUTES[name].title)}</strong></span>${icon('right', 16)}</a>`;
-  return `<section class="card"><div class="lines">${['plano', 'metas', 'ajustes'].map(link).join('')}</div></section>`;
+  return `<section class="card"><div class="lines">${['plano', 'metas', 'assistente', 'ajustes'].map(link).join('')}</div></section>`;
 }
 
 /** Números grandes sobem do zero ao entrar na tela (não a cada alteração de dados). */

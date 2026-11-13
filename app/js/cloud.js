@@ -199,3 +199,6 @@ export async function saveHousehold(id, baseRev, state) {
 
 export const createHousehold = (state = null) => authed('/rest/v1/rpc/create_household', { method: 'POST', body: { p_name: 'Casa', p_state: state } });
 export const joinHousehold = (code) => authed('/rest/v1/rpc/join_household', { method: 'POST', body: { p_code: code } });
+
+/** Consulta o assistente Gemini com a sessão atual. Nunca envia a chave da IA ao navegador. */
+export const askAssistant = (payload) => authed('/functions/v1/monetizeo-assistant', { method: 'POST', body: payload });

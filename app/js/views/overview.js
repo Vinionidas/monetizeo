@@ -269,22 +269,41 @@ function forecast(ctx) {
     </section>`;
 }
 
+function foldSection(title, meta, content) {
+  return `<details class="card overview-fold">
+    <summary><span>${title}</span><span class="overview-fold-meta">${meta}<i class="overview-fold-chevron" aria-hidden="true"></i></span></summary>
+    <div class="overview-fold-content">${content}</div>
+  </details>`;
+}
+
 export function render(ctx) {
   const items = monthItems(ctx.state, ctx.ym);
   const look = lookups(ctx.state);
   look.shares = ctx.state.people.length > 1 ? splitShares(ctx.state, items) : null;
+  const categoryTotal = sum(expensesByCategory(ctx.state, items), (row) => row.total);
+  const forecastRows = projection(ctx.state, ctx.currentYm, 12);
+  const forecastEnd = forecastRows.at(-1);
+  const accounts = ctx.state.accounts.filter(isMoneyAccount);
+  const missingBalances = accountsNeedingBalance(ctx.state);
+  const accountBalances = accounts.map((account) => accountBalance(ctx.state, account, ctx.today));
+  const balanceTotal = sum(accountBalances, (balance) => balance ?? 0);
+  const balanceLabel = !accounts.length
+    ? 'Cadastre uma conta'
+    : missingBalances.length
+      ? `Falta informar ${missingBalances.length} saldo${missingBalances.length === 1 ? '' : 's'}`
+      : `${accountBalances.some((balance) => balance === null) ? 'Parcial · ' : ''}${money(balanceTotal)}`;
   return `
-    ${backupNotice(ctx)}
-    ${balances(ctx)}
     ${hero(ctx, items)}
+    ${pending(ctx, items, look)}
+    ${foldSection('Gastos por categoria', categoryTotal ? money(categoryTotal) : 'sem gastos', budget(ctx, items))}
+    ${foldSection('Sobra prevista nos próximos 12 meses', forecastEnd ? `Acumulado ${money(forecastEnd.accumulated)}` : '', forecast(ctx))}
+    ${foldSection('Saldo calculado', balanceLabel, balances(ctx))}
     <div class="grid">
-      ${pending(ctx, items, look)}
       ${house(ctx, items)}
       ${receivables(ctx)}
       ${cards(ctx)}
-      ${budget(ctx, items)}
-      ${forecast(ctx)}
-    </div>`;
+    </div>
+    ${backupNotice(ctx)}`;
 }
 
 export const actions = {

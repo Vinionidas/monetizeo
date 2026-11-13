@@ -143,6 +143,16 @@ code { font-family: ui-monospace, Consolas, monospace; font-size: .92em; backgro
 .card-head h2 { font-size: 1rem; font-weight: 650; letter-spacing: -.01em; }
 .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: start; }
 .grid > .wide { grid-column: 1 / -1; }
+.card.overview-fold { padding: 0; gap: 0; overflow: hidden; }
+.overview-fold > summary { display: flex; align-items: center; justify-content: space-between; gap: 14px; min-height: 60px; padding: 15px 20px; cursor: pointer; list-style: none; font-weight: 650; }
+.overview-fold > summary::-webkit-details-marker { display: none; }
+.overview-fold > summary:hover { background: var(--surface-2); }
+.overview-fold-meta { display: flex; align-items: center; gap: 12px; color: var(--muted); font-size: .85rem; font-weight: 550; text-align: right; }
+.overview-fold-chevron { width: 9px; height: 9px; flex: none; border-right: 1.8px solid currentColor; border-bottom: 1.8px solid currentColor; transform: rotate(45deg) translateY(-2px); transition: transform .16s ease; }
+.overview-fold[open] .overview-fold-chevron { transform: rotate(225deg) translate(-2px, -1px); }
+.overview-fold-content { display: grid; gap: 12px; padding: 2px 20px 20px; }
+.overview-fold-content > .card { padding: 0; border: 0; border-radius: 0; background: transparent; }
+.overview-fold-content .wide { grid-column: auto; }
 
 .big { font-size: 2.5rem; font-weight: 650; letter-spacing: -.035em; line-height: 1.05; display: inline-flex; align-items: baseline; }
 .big small { font-size: .42em; font-weight: 600; letter-spacing: 0; color: var(--muted); }

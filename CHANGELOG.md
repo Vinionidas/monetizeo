@@ -8,6 +8,7 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/).
 - Assistente Gemini somente para consulta, com consentimento, resumo financeiro agregado e chave mantida no servidor Supabase.
 - Instruções de configuração, privacidade, custo e limitações em `docs/assistente-gemini.md`.
 - Chat renomeado para Moneti-bot, com autorização que recolhe após o aceite, respostas exibidas gradualmente e visual mais leve.
+- Visão geral reorganizada para destacar sobra do mês, contas a pagar e blocos expansíveis de categorias, projeção e saldo calculado.
 
 ## [0.18.0] - 2026-11-12
 

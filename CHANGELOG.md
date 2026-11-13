@@ -2,6 +2,12 @@
 
 Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/).
 
+## [0.19.0] - Em desenvolvimento
+
+### Adicionado
+- Assistente Gemini somente para consulta, com consentimento, resumo financeiro agregado e chave mantida no servidor Supabase.
+- Instruções de configuração, privacidade, custo e limitações em `docs/assistente-gemini.md`.
+
 ## [0.18.0] - 2026-11-12
 
 ### Alterado

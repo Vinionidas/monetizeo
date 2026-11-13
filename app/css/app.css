@@ -386,23 +386,26 @@ button.check:hover { border-color: var(--accent); background: var(--accent-soft)
 .welcome .card { width: min(520px, 100%); padding: 28px; }
 
 /* ----------------------------------------------------------- assistente IA */
-.assistant-card { width: min(820px, 100%); margin: 0 auto; }
-.assistant-privacy { display: grid; gap: 9px; }
+.assistant-card { width: min(820px, 100%); margin: 0 auto; border-radius: 22px; }
+.assistant-card > .muted { margin: 2px 0 14px; }
+.assistant-privacy { display: grid; gap: 12px; border-radius: 20px; }
+.assistant-connected { display: flex; justify-content: flex-end; align-items: center; gap: 12px; margin: -4px 0 12px; color: var(--muted); font-size: .8rem; }
+.assistant-connected::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
 .assistant-consent { display: flex; align-items: flex-start; gap: 9px; color: var(--text); }
 .assistant-consent input { flex: none; margin-top: 4px; accent-color: var(--accent); }
-.assistant-consent-state { color: var(--accent-strong); font-weight: 600; }
 .assistant-suggestions { display: flex; flex-wrap: wrap; gap: 8px; }
-.assistant-messages { display: grid; align-content: start; gap: 10px; min-height: 150px; max-height: min(48vh, 420px); overflow-y: auto; padding: 12px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface-2); }
-.assistant-message { width: fit-content; max-width: min(88%, 620px); display: grid; gap: 4px; padding: 9px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); white-space: pre-wrap; overflow-wrap: anywhere; }
+.assistant-messages { display: grid; align-content: start; gap: 10px; min-height: 150px; max-height: min(48vh, 420px); overflow-y: auto; padding: 10px 0; }
+.assistant-message { width: fit-content; max-width: min(88%, 620px); display: grid; gap: 4px; padding: 11px 15px; border: 0; border-radius: 20px 20px 20px 5px; background: var(--surface-2); white-space: pre-wrap; overflow-wrap: anywhere; }
 .assistant-message small { color: var(--muted); font-size: .73rem; }
-.assistant-message.user { justify-self: end; border-color: transparent; background: var(--accent-soft); }
+.assistant-message.user { justify-self: end; border-radius: 20px 20px 5px 20px; background: var(--accent-soft); }
 .assistant-message p { line-height: 1.5; }
 .assistant-form { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 9px; }
-.assistant-form textarea { width: 100%; min-height: 48px; max-height: 160px; resize: vertical; padding: 10px 12px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); background: var(--surface); }
+.assistant-form textarea { width: 100%; min-height: 48px; max-height: 160px; resize: vertical; padding: 12px 15px; border: 1px solid var(--line); border-radius: 18px; background: var(--surface); }
 .assistant-form textarea:disabled { opacity: .6; }
+.assistant-form .btn { border-radius: 16px; }
 .assistant-loading { padding: 4px 8px; }
 .assistant-footnote { font-size: .8rem; }
-.assistant-suggestions .btn { white-space: normal; }
+.assistant-suggestions .btn { white-space: normal; border-radius: 999px; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 .welcome h1 { font-size: 1.6rem; letter-spacing: -.02em; }
 

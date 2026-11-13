@@ -24,7 +24,7 @@ const ROUTES = {
   casa: { title: 'Casa', icon: 'house', view: house, short: 'Casa' },
   plano: { title: 'Planejamento', icon: 'chart', view: plan, short: 'Plano' },
   metas: { title: 'Metas e dívidas', icon: 'target', view: goals, short: 'Metas' },
-  assistente: { title: 'Pergunte ao Monetizeo', icon: 'chat', view: assistant, short: 'Assistente' },
+  assistente: { title: 'Moneti-bot', icon: 'chat', view: assistant, short: 'Assistente' },
   ajustes: { title: 'Ajustes', icon: 'gear', view: settings, short: 'Ajustes' },
 };
 const MOBILE_TABS = ['inicio', 'lancamentos', 'cartoes', 'casa'];

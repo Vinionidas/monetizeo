@@ -9,6 +9,7 @@ Formato: [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/).
 - Instruções de configuração, privacidade, custo e limitações em `docs/assistente-gemini.md`.
 - Chat renomeado para Moneti-bot, com autorização que recolhe após o aceite, respostas exibidas gradualmente e visual mais leve.
 - Visão geral reorganizada para destacar sobra do mês, contas a pagar e blocos expansíveis de categorias, projeção e saldo calculado.
+- Chat do Moneti-bot em tela ampla, com sugestões apenas antes da primeira pergunta, campo de mensagem com a fonte do app e controles de consentimento em Ajustes.
 
 ## [0.18.0] - 2026-11-12
 

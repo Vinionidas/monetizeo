@@ -441,7 +441,7 @@ button.check:hover { border-color: var(--accent); background: var(--accent-soft)
   .legend { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .minis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .form-grid { grid-template-columns: minmax(0, 1fr); }
-  .assistant-page { height: calc(100dvh - 250px - env(safe-area-inset-bottom)); min-height: 320px; }
+  .assistant-page { height: calc(100dvh - 200px - env(safe-area-inset-bottom)); min-height: 320px; }
   .assistant-message { max-width: 94%; }
   .assistant-composer textarea { font-size: 16px; }
   .toolbar select { max-width: none; flex: 1; min-width: 120px; }
